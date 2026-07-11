@@ -23,8 +23,9 @@ let appCheck: AppCheck | undefined;
 // Initialize App Check on the client side
 if (typeof window !== "undefined") {
   const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+  const enableAppCheck = siteKey && (process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_ENABLE_APPCHECK === 'true');
   
-  if (siteKey || process.env.NODE_ENV === 'development') {
+  if (enableAppCheck) {
     // In development, enable the debug token
     if (process.env.NODE_ENV === 'development') {
       // This must be set BEFORE initializeAppCheck
@@ -34,7 +35,7 @@ if (typeof window !== "undefined") {
 
     try {
       appCheck = initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider(siteKey || 'any-string-for-debug'),
+        provider: new ReCaptchaV3Provider(siteKey),
         isTokenAutoRefreshEnabled: true
       });
       console.log('✅ Firebase App Check initialized successfully');
@@ -44,8 +45,6 @@ if (typeof window !== "undefined") {
       }
     }
   }
-
-
 }
 
 export { auth, db, appCheck };

@@ -28,14 +28,35 @@ export async function GET() {
       `📡 Config Proxy: Backend responded with status ${response.status}`,
     )
 
-    const data = await response.json()
-    console.log(data)
-    return NextResponse.json(data)
+    const responseText = await response.text()
+
+    if (!response.ok) {
+      console.error(
+        `❌ Config Proxy: Backend returned error status ${response.status}. Body: ${responseText}`
+      )
+      return NextResponse.json(
+        { error: `Backend returned status ${response.status}`, details: responseText },
+        { status: response.status }
+      )
+    }
+
+    try {
+      const data = JSON.parse(responseText)
+      return NextResponse.json(data)
+    } catch (parseError: any) {
+      console.error(
+        `❌ Config Proxy: Failed to parse backend response as JSON. Body: ${responseText}`
+      )
+      return NextResponse.json(
+        { error: "Invalid JSON response from backend", details: responseText },
+        { status: 500 }
+      )
+    }
   } catch (error: any) {
-    console.error("❌ Config Proxy Error:", JSON.parse(error.message))
+    console.error("❌ Config Proxy Error:", error.message || error)
     return NextResponse.json(
-      { error: "Failed to fetch config", details: JSON.parse(error.message) },
-      { status: 500 },
+      { error: "Failed to fetch config", details: error.message || String(error) },
+      { status: 500 }
     )
   }
 }
@@ -61,17 +82,35 @@ export async function POST(request: Request) {
       body: JSON.stringify(body),
     })
 
-    console.log(
-      `📡 Config Proxy: Backend responded with status ${response.status}`,
-    )
+    const responseText = await response.text()
 
-    const data = await response.json()
-    return NextResponse.json(data)
+    if (!response.ok) {
+      console.error(
+        `❌ Config Proxy Save Error: Backend returned error status ${response.status}. Body: ${responseText}`
+      )
+      return NextResponse.json(
+        { error: `Backend returned status ${response.status}`, details: responseText },
+        { status: response.status }
+      )
+    }
+
+    try {
+      const data = JSON.parse(responseText)
+      return NextResponse.json(data)
+    } catch (parseError: any) {
+      console.error(
+        `❌ Config Proxy Save Error: Failed to parse backend response as JSON. Body: ${responseText}`
+      )
+      return NextResponse.json(
+        { error: "Invalid JSON response from backend", details: responseText },
+        { status: 500 }
+      )
+    }
   } catch (error: any) {
-    console.error("❌ Config Proxy Save Error:", error.message)
+    console.error("❌ Config Proxy Save Error:", error.message || error)
     return NextResponse.json(
-      { error: "Failed to update config", details: error.message },
-      { status: 500 },
+      { error: "Failed to update config", details: error.message || String(error) },
+      { status: 500 }
     )
   }
 }

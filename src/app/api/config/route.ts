@@ -29,11 +29,12 @@ export async function GET() {
     )
 
     const data = await response.json()
+    console.log(data)
     return NextResponse.json(data)
   } catch (error: any) {
-    console.error("❌ Config Proxy Error:", error.message)
+    console.error("❌ Config Proxy Error:", JSON.parse(error.message))
     return NextResponse.json(
-      { error: "Failed to fetch config", details: error.message },
+      { error: "Failed to fetch config", details: JSON.parse(error.message) },
       { status: 500 },
     )
   }

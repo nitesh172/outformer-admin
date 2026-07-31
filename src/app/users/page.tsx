@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, limit, orderBy } from "firebase/firestore";
-import { User, CreditCard, Mail, Calendar, Search, History } from "lucide-react";
+import { collection, getDocs, query, limit, orderBy, startAfter, startAt, endAt } from "firebase/firestore";
+import { User, CreditCard, Mail, Calendar, Search, History, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 interface UserProfile {
@@ -23,35 +23,121 @@ interface UserProfile {
   };
 }
 
+const PAGE_SIZE = 10;
+
 export default function UsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageStartDocs, setPageStartDocs] = useState<any[]>([null]);
+  const [hasMore, setHasMore] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    async function fetchUsers() {
-      try {
-        const q = query(collection(db, "users"), limit(100));
-        const querySnapshot = await getDocs(q);
-        const userList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as UserProfile[];
-        setUsers(userList);
-      } catch (error) {
-        console.error("Error fetching users:", error);
-      } finally {
-        setLoading(false);
+  // Fetch users function
+  async function fetchUsers(pageNumber: number, startDoc: any, searchStr: string) {
+    setLoading(true);
+    try {
+      let q;
+      const baseQuery = collection(db, "users");
+      
+      if (searchStr.trim()) {
+        const queryTerm = searchStr.trim();
+        q = query(
+          baseQuery,
+          orderBy("email", "asc"),
+          startAt(queryTerm),
+          endAt(queryTerm + "\uf8ff"),
+          limit(PAGE_SIZE + 1)
+        );
+        if (startDoc) {
+          q = query(
+            baseQuery,
+            orderBy("email", "asc"),
+            startAt(queryTerm),
+            endAt(queryTerm + "\uf8ff"),
+            startAfter(startDoc),
+            limit(PAGE_SIZE + 1)
+          );
+        }
+      } else {
+        q = query(
+          baseQuery,
+          orderBy("email", "asc"),
+          limit(PAGE_SIZE + 1)
+        );
+        if (startDoc) {
+          q = query(
+            baseQuery,
+            orderBy("email", "asc"),
+            startAfter(startDoc),
+            limit(PAGE_SIZE + 1)
+          );
+        }
       }
+
+      const querySnapshot = await getDocs(q);
+      const docs = querySnapshot.docs;
+      
+      const hasMoreData = docs.length > PAGE_SIZE;
+      setHasMore(hasMoreData);
+      
+      const pageDocs = hasMoreData ? docs.slice(0, PAGE_SIZE) : docs;
+      const userList = pageDocs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as UserProfile[];
+      
+      setUsers(userList);
+      setPage(pageNumber);
+      
+      if (hasMoreData) {
+        const lastDoc = pageDocs[pageDocs.length - 1];
+        setPageStartDocs(prev => {
+          const nextDocs = [...prev];
+          nextDocs[pageNumber] = lastDoc;
+          return nextDocs;
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching users:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Initial load and search changes
+  useEffect(() => {
+    // Reset to page 1 on search change
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
 
-    fetchUsers();
-  }, []);
+    searchTimeoutRef.current = setTimeout(() => {
+      setPageStartDocs([null]);
+      fetchUsers(1, null, searchTerm);
+    }, 400);
 
-  const filteredUsers = users.filter(user => 
-    user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.displayName?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchTerm]);
+
+  const handleNextPage = () => {
+    if (hasMore && !loading) {
+      const nextStartDoc = pageStartDocs[page];
+      fetchUsers(page + 1, nextStartDoc, searchTerm);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (page > 1 && !loading) {
+      const prevStartDoc = pageStartDocs[page - 2];
+      fetchUsers(page - 1, prevStartDoc, searchTerm);
+    }
+  };
 
   return (
     <div>
@@ -65,7 +151,7 @@ export default function UsersPage() {
           <Search size={20} style={{ position: 'absolute', left: '16px', color: '#9ca3af' }} />
           <input 
             type="text" 
-            placeholder="Search by name or email..." 
+            placeholder="Search by email..." 
             style={{ paddingLeft: '48px' }}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -85,17 +171,17 @@ export default function UsersPage() {
           </thead>
           <tbody>
             {loading ? (
-              [...Array(5)].map((_, i) => (
+              [...Array(PAGE_SIZE)].map((_, i) => (
                 <tr key={i}>
                   <td colSpan={4}><div className="skeleton" style={{ height: '24px', width: '100%' }}></div></td>
                 </tr>
               ))
-            ) : filteredUsers.length === 0 ? (
+            ) : users.length === 0 ? (
               <tr>
                 <td colSpan={4} style={{ textAlign: 'center', padding: '40px' }}>No users found</td>
               </tr>
             ) : (
-              filteredUsers.map((user) => (
+              users.map((user) => (
                 <tr key={user.id}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -107,7 +193,8 @@ export default function UsersPage() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontWeight: 'bold'
+                        fontWeight: 'bold',
+                        color: 'white'
                       }}>
                         {(user.displayName || user.email || "?")[0].toUpperCase()}
                       </div>
@@ -156,6 +243,39 @@ export default function UsersPage() {
           </tbody>
         </table>
       </div>
+
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginTop: '20px',
+        padding: '10px 0' 
+      }}>
+        <div style={{ color: '#9ca3af', fontSize: '14px' }}>
+          Page {page}
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={handlePrevPage} 
+            disabled={page === 1 || loading}
+            className="btn btn-outline"
+            style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <ChevronLeft size={16} />
+            Previous
+          </button>
+          <button 
+            onClick={handleNextPage} 
+            disabled={!hasMore || loading}
+            className="btn btn-outline"
+            style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            Next
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
+

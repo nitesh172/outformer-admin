@@ -12,7 +12,8 @@ import {
   limit, 
   Timestamp,
   doc,
-  getDoc
+  getDoc,
+  startAfter
 } from "firebase/firestore";
 import { 
   Search, 
@@ -21,7 +22,8 @@ import {
   Clock, 
   User as UserIcon,
   RefreshCcw,
-  ChevronLeft
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 interface LedgerEntry {
@@ -41,6 +43,8 @@ interface UserProfile {
   displayName?: string;
 }
 
+const PAGE_SIZE = 10;
+
 function LedgerContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -54,6 +58,11 @@ function LedgerContent() {
   const [usersLoading, setUsersLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const [pageStartDocs, setPageStartDocs] = useState<any[]>([null]);
+  const [hasMore, setHasMore] = useState(false);
 
   // Fetch users for the dropdown/search
   useEffect(() => {
@@ -88,58 +97,88 @@ function LedgerContent() {
     fetchUsers();
   }, [initialUserId]);
 
+  async function fetchLedger(pageNumber: number, startDoc: any) {
+    if (!selectedUserId) return;
+    setLoading(true);
+    try {
+      let q = query(
+        collection(db, "ledger"),
+        where("userId", "==", selectedUserId),
+        orderBy("timestamp", "desc"),
+        limit(PAGE_SIZE + 1)
+      );
+      if (startDoc) {
+        q = query(
+          collection(db, "ledger"),
+          where("userId", "==", selectedUserId),
+          orderBy("timestamp", "desc"),
+          startAfter(startDoc),
+          limit(PAGE_SIZE + 1)
+        );
+      }
+      const querySnapshot = await getDocs(q);
+      const docs = querySnapshot.docs;
+      
+      const hasMoreData = docs.length > PAGE_SIZE;
+      setHasMore(hasMoreData);
+      
+      const pageDocs = hasMoreData ? docs.slice(0, PAGE_SIZE) : docs;
+      const entries = pageDocs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as LedgerEntry[];
+      
+      setLedgerEntries(entries);
+      setPage(pageNumber);
+      
+      if (hasMoreData) {
+        const lastDoc = pageDocs[pageDocs.length - 1];
+        setPageStartDocs(prev => {
+          const nextDocs = [...prev];
+          nextDocs[pageNumber] = lastDoc;
+          return nextDocs;
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching ledger:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // Fetch ledger entries when selectedUserId changes
   useEffect(() => {
     if (!selectedUserId) {
       setLedgerEntries([]);
+      setPage(1);
+      setPageStartDocs([null]);
+      setHasMore(false);
       return;
     }
 
-    async function fetchLedger() {
-      setLoading(true);
-      try {
-        const q = query(
-          collection(db, "ledger"),
-          where("userId", "==", selectedUserId),
-          orderBy("timestamp", "desc"),
-          limit(50)
-        );
-        const querySnapshot = await getDocs(q);
-        const entries = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as LedgerEntry[];
-        setLedgerEntries(entries);
-      } catch (error) {
-        console.error("Error fetching ledger:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchLedger();
+    setPage(1);
+    setPageStartDocs([null]);
+    fetchLedger(1, null);
   }, [selectedUserId]);
 
   const refreshLedger = async () => {
     if (!selectedUserId) return;
-    setLoading(true);
-    try {
-      const q = query(
-        collection(db, "ledger"),
-        where("userId", "==", selectedUserId),
-        orderBy("timestamp", "desc"),
-        limit(50)
-      );
-      const querySnapshot = await getDocs(q);
-      const entries = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as LedgerEntry[];
-      setLedgerEntries(entries);
-    } catch (error) {
-      console.error("Error refreshing ledger:", error);
-    } finally {
-      setLoading(false);
+    setPage(1);
+    setPageStartDocs([null]);
+    await fetchLedger(1, null);
+  };
+
+  const handleNextPage = () => {
+    if (hasMore && !loading) {
+      const nextStartDoc = pageStartDocs[page];
+      fetchLedger(page + 1, nextStartDoc);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (page > 1 && !loading) {
+      const prevStartDoc = pageStartDocs[page - 2];
+      fetchLedger(page - 1, prevStartDoc);
     }
   };
 
@@ -268,7 +307,8 @@ function LedgerContent() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                color: 'white'
               }}>
                 {(selectedUser.displayName || selectedUser.email || "?")[0].toUpperCase()}
               </div>
@@ -312,78 +352,110 @@ function LedgerContent() {
             </button>
           </div>
           <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Balance After</th>
-                <th>Reference</th>
-                <th>Timestamp</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                [...Array(5)].map((_, i) => (
-                  <tr key={i}>
-                    <td colSpan={6}><div className="skeleton" style={{ height: '24px', width: '100%' }}></div></td>
-                  </tr>
-                ))
-              ) : ledgerEntries.length === 0 ? (
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px' }}>No ledger entries found for this user</td>
+                  <th>Type</th>
+                  <th>Category</th>
+                  <th>Amount</th>
+                  <th>Balance After</th>
+                  <th>Reference</th>
+                  <th>Timestamp</th>
                 </tr>
-              ) : (
-                ledgerEntries.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {entry.type === 'INFLOW' ? (
-                          <div style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <ArrowDownLeft size={16} />
-                            <span className="badge badge-success">INFLOW</span>
-                          </div>
-                        ) : (
-                          <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <ArrowUpRight size={16} />
-                            <span className="badge badge-danger">OUTFLOW</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <span style={{ fontWeight: '500' }}>{entry.category}</span>
-                    </td>
-                    <td style={{ fontWeight: '700', color: entry.type === 'INFLOW' ? '#10b981' : '#ef4444' }}>
-                      {entry.type === 'INFLOW' ? '+' : '-'}{entry.amount}
-                      <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.8 }}>
-                        {entry.category === 'WHISPER' ? 'sec' : 'credits'}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: '600' }}>
-                        {entry.balanceAfter}
-                        <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.6 }}>
+              </thead>
+              <tbody>
+                {loading ? (
+                  [...Array(PAGE_SIZE)].map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={6}><div className="skeleton" style={{ height: '24px', width: '100%' }}></div></td>
+                    </tr>
+                  ))
+                ) : ledgerEntries.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: '40px' }}>No ledger entries found for this user</td>
+                  </tr>
+                ) : (
+                  ledgerEntries.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {entry.type === 'INFLOW' ? (
+                            <div style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <ArrowDownLeft size={16} />
+                              <span className="badge badge-success">INFLOW</span>
+                            </div>
+                          ) : (
+                            <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <ArrowUpRight size={16} />
+                              <span className="badge badge-danger">OUTFLOW</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: '500' }}>{entry.category}</span>
+                      </td>
+                      <td style={{ fontWeight: '700', color: entry.type === 'INFLOW' ? '#10b981' : '#ef4444' }}>
+                        {entry.type === 'INFLOW' ? '+' : '-'}{entry.amount}
+                        <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.8 }}>
                           {entry.category === 'WHISPER' ? 'sec' : 'credits'}
                         </span>
-                      </div>
-                    </td>
-                    <td>
-                      <code style={{ fontSize: '11px', color: '#9ca3af' }}>{entry.referenceId || "N/A"}</code>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#9ca3af' }}>
-                        <Clock size={14} />
-                        {formatDate(entry.timestamp)}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: '600' }}>
+                          {entry.balanceAfter}
+                          <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.6 }}>
+                            {entry.category === 'WHISPER' ? 'sec' : 'credits'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <code style={{ fontSize: '11px', color: '#9ca3af' }}>{entry.referenceId || "N/A"}</code>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#9ca3af' }}>
+                          <Clock size={14} />
+                          {formatDate(entry.timestamp)}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            marginTop: '20px',
+            padding: '10px 0' 
+          }}>
+            <div style={{ color: '#9ca3af', fontSize: '14px' }}>
+              Page {page}
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={handlePrevPage} 
+                disabled={page === 1 || loading}
+                className="btn btn-outline"
+                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <ChevronLeft size={16} />
+                Previous
+              </button>
+              <button 
+                onClick={handleNextPage} 
+                disabled={!hasMore || loading}
+                className="btn btn-outline"
+                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                Next
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
         </>
       )}
     </div>
@@ -397,3 +469,4 @@ export default function LedgerPage() {
     </Suspense>
   );
 }
+

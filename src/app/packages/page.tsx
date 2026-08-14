@@ -5,6 +5,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { Plus, Edit, Trash2, X } from "lucide-react";
 import { useToast } from "@/lib/ToastContext";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 
 interface PricingPackage {
   id: string;
@@ -35,6 +36,14 @@ export default function PackagesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingPackage, setEditingPackage] = useState<PricingPackage | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Custom UI confirmation modal state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  } | null>(null)
   const [formData, setFormData] = useState<Partial<PricingPackage>>({
     name: '',
     price: 0,
@@ -94,13 +103,26 @@ export default function PackagesPage() {
   };
 
   const handleDeletePackage = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this package?")) return;
-    try {
-      await deleteDoc(doc(db, "packages", id));
-      fetchPackages();
-    } catch (error) {
-      console.error("Error deleting package:", error);
-    }
+    const pkg = packages.find(p => p.id === id);
+    if (!pkg) return;
+
+    setConfirmState({
+      isOpen: true,
+      title: "Delete Package",
+      message: `Are you sure you want to delete the package "${pkg.name}"?`,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, "packages", id));
+          fetchPackages();
+          showToast("Package deleted successfully", "success");
+        } catch (error) {
+          console.error("Error deleting package:", error);
+          showToast("Failed to delete package", "error");
+        } finally {
+          setConfirmState(null);
+        }
+      }
+    });
   };
 
   const openAddModal = () => {
@@ -351,13 +373,14 @@ export default function PackagesPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
                 <div className="input-group">
                   <label>Status</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
+                  <CustomSelect
+                    value={formData.status || "ACTIVE"}
+                    onChange={(status) => setFormData({...formData, status})}
+                    options={[
+                      { value: "ACTIVE", label: "Active" },
+                      { value: "INACTIVE", label: "Inactive" }
+                    ]}
+                  />
                 </div>
                 <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '100%', marginTop: '10px' }}>
                   <input
@@ -378,6 +401,51 @@ export default function PackagesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmState && confirmState.isOpen && (
+        <div className="modal-overlay" onClick={() => setConfirmState(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "450px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--card-bg)" }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+              <div style={{
+                background: "rgba(239, 68, 68, 0.1)",
+                color: "#ef4444",
+                padding: "10px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <Trash2 size={24} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "var(--text)" }}>{confirmState.title}</h3>
+                <p style={{ margin: "12px 0 24px 0", fontSize: "14px", color: "var(--text-secondary)", lineHeight: "1.5" }}>{confirmState.message}</p>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer", fontSize: "14px" }}
+                    onClick={() => setConfirmState(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: "8px 16px", borderRadius: "8px", background: "#ef4444", color: "#fff", cursor: "pointer", border: "none", fontWeight: "600", fontSize: "14px" }}
+                    onClick={() => {
+                      confirmState.onConfirm()
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -7,6 +7,7 @@ import { Ticket, Plus, Trash2, Percent, IndianRupee, Pencil, X } from "lucide-re
 
 import { useToast } from "@/lib/ToastContext";
 import { useAuth } from "@/lib/AuthContext";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 
 interface Coupon {
   id: string;
@@ -32,6 +33,14 @@ export default function CouponsPage() {
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
+
+  // Custom UI confirmation modal state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  } | null>(null)
   const [newCoupon, setNewCoupon] = useState<Partial<Coupon>>({
     code: '',
     description: '',
@@ -115,13 +124,26 @@ export default function CouponsPage() {
   };
 
   const handleDeleteCoupon = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this coupon?")) return;
-    try {
-      await deleteDoc(doc(db, "coupons", id));
-      fetchCoupons();
-    } catch (error) {
-      console.error("Error deleting coupon:", error);
-    }
+    const coupon = coupons.find(c => c.id === id);
+    if (!coupon) return;
+
+    setConfirmState({
+      isOpen: true,
+      title: "Delete Coupon",
+      message: `Are you sure you want to delete the coupon "${coupon.code}"?`,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, "coupons", id));
+          fetchCoupons();
+          showToast("Coupon deleted successfully", "success");
+        } catch (error) {
+          console.error("Error deleting coupon:", error);
+          showToast("Failed to delete coupon", "error");
+        } finally {
+          setConfirmState(null);
+        }
+      }
+    });
   };
 
   const openEditModal = (coupon: Coupon) => {
@@ -322,19 +344,20 @@ export default function CouponsPage() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-grid">
                 <div className="input-group">
                   <label>Type</label>
-                  <select 
-                    value={editingCoupon ? editingCoupon.type : newCoupon.type}
-                    onChange={(e) => editingCoupon
-                      ? setEditingCoupon({...editingCoupon, type: e.target.value as any})
-                      : setNewCoupon({...newCoupon, type: e.target.value as any})
+                  <CustomSelect
+                    value={editingCoupon ? editingCoupon.type : (newCoupon.type || "PERCENTAGE")}
+                    onChange={(type) => editingCoupon
+                      ? setEditingCoupon({...editingCoupon, type})
+                      : setNewCoupon({...newCoupon, type})
                     }
-                  >
-                    <option value="PERCENTAGE">Percentage</option>
-                    <option value="FIXED">Fixed Amount</option>
-                  </select>
+                    options={[
+                      { value: "PERCENTAGE", label: "Percentage" },
+                      { value: "FIXED", label: "Fixed Amount" }
+                    ]}
+                  />
                 </div>
                 <div className="input-group">
                   <label>Value</label>
@@ -350,7 +373,7 @@ export default function CouponsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-grid">
                 <div className="input-group">
                   <label>Usage Limit</label>
                   <input 
@@ -376,7 +399,7 @@ export default function CouponsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-grid">
                 <div className="input-group">
                   <label>Min Order (₹)</label>
                   <input 
@@ -390,42 +413,41 @@ export default function CouponsPage() {
                 </div>
                 <div className="input-group">
                   <label>Status</label>
-                  <select 
-                    value={editingCoupon ? editingCoupon.status : newCoupon.status}
-                    onChange={(e) => editingCoupon
-                      ? setEditingCoupon({...editingCoupon, status: e.target.value as any})
-                      : setNewCoupon({...newCoupon, status: e.target.value as any})
+                  <CustomSelect
+                    value={editingCoupon ? editingCoupon.status : (newCoupon.status || "ACTIVE")}
+                    onChange={(status) => editingCoupon
+                      ? setEditingCoupon({...editingCoupon, status})
+                      : setNewCoupon({...newCoupon, status})
                     }
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
+                    options={[
+                      { value: "ACTIVE", label: "Active" },
+                      { value: "INACTIVE", label: "Inactive" }
+                    ]}
+                  />
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div className="input-group">
-                  <label>Start Date</label>
-                  <input 
-                    type="datetime-local" 
-                    value={(editingCoupon ? editingCoupon.startDate : newCoupon.startDate) ?? ''}
-                    onChange={(e) => editingCoupon
-                      ? setEditingCoupon({...editingCoupon, startDate: e.target.value})
-                      : setNewCoupon({...newCoupon, startDate: e.target.value})
-                    }
-                  />
-                </div>
-                <div className="input-group">
-                  <label>End Date</label>
-                  <input 
-                    type="datetime-local" 
-                    value={(editingCoupon ? editingCoupon.endDate : newCoupon.endDate) ?? ''}
-                    onChange={(e) => editingCoupon
-                      ? setEditingCoupon({...editingCoupon, endDate: e.target.value})
-                      : setNewCoupon({...newCoupon, endDate: e.target.value})
-                    }
-                  />
-                </div>
+              <div className="input-group">
+                <label>Start Date</label>
+                <input 
+                  type="datetime-local" 
+                  value={(editingCoupon ? editingCoupon.startDate : newCoupon.startDate) ?? ''}
+                  onChange={(e) => editingCoupon
+                    ? setEditingCoupon({...editingCoupon, startDate: e.target.value})
+                    : setNewCoupon({...newCoupon, startDate: e.target.value})
+                  }
+                />
+              </div>
+              <div className="input-group">
+                <label>End Date</label>
+                <input 
+                  type="datetime-local" 
+                  value={(editingCoupon ? editingCoupon.endDate : newCoupon.endDate) ?? ''}
+                  onChange={(e) => editingCoupon
+                    ? setEditingCoupon({...editingCoupon, endDate: e.target.value})
+                    : setNewCoupon({...newCoupon, endDate: e.target.value})
+                  }
+                />
               </div>
               
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
@@ -444,6 +466,51 @@ export default function CouponsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmState && confirmState.isOpen && (
+        <div className="modal-overlay" onClick={() => setConfirmState(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "450px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--card-bg)" }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+              <div style={{
+                background: "rgba(239, 68, 68, 0.1)",
+                color: "#ef4444",
+                padding: "10px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <Trash2 size={24} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "var(--text)" }}>{confirmState.title}</h3>
+                <p style={{ margin: "12px 0 24px 0", fontSize: "14px", color: "var(--text-secondary)", lineHeight: "1.5" }}>{confirmState.message}</p>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer", fontSize: "14px" }}
+                    onClick={() => setConfirmState(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: "8px 16px", borderRadius: "8px", background: "#ef4444", color: "#fff", cursor: "pointer", border: "none", fontWeight: "600", fontSize: "14px" }}
+                    onClick={() => {
+                      confirmState.onConfirm()
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

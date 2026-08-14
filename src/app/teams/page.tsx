@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Shield, Plus, Pencil, Trash2, X, Mail } from "lucide-react";
 import { useToast } from "@/lib/ToastContext";
 import { useAuth } from "@/lib/AuthContext";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 
 interface TeamMember {
   id: string;
@@ -26,6 +27,14 @@ export default function TeamsPage() {
     email: "",
     role: "team" as 'admin' | 'team'
   });
+
+  // Custom UI confirmation modal state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  } | null>(null)
 
   async function fetchTeam() {
     setLoading(true);
@@ -108,27 +117,36 @@ export default function TeamsPage() {
   const handleDelete = async (id: string) => {
     const member = members.find(m => m.id === id);
     if (!member) return;
-    if (!confirm("Are you sure you want to remove this team member?")) return;
-    try {
-      const token = await user?.getIdToken();
-      await fetch("/api/team", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          email: member.email,
-          action: "DELETE"
-        })
-      });
 
-      showToast("Team member removed successfully", "success");
-      fetchTeam();
-    } catch (error) {
-      console.error("Error removing team member:", error);
-      showToast("Failed to remove team member", "error");
-    }
+    setConfirmState({
+      isOpen: true,
+      title: "Remove Team Member",
+      message: `Are you sure you want to remove ${member.displayName || member.email} from the team?`,
+      onConfirm: async () => {
+        try {
+          const token = await user?.getIdToken();
+          await fetch("/api/team", {
+            method: "POST",
+            headers: { 
+              "Content-Type": "application/json",
+              ...(token ? { "Authorization": `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({
+              email: member.email,
+              action: "DELETE"
+            })
+          });
+
+          showToast("Team member removed successfully", "success");
+          fetchTeam();
+        } catch (error) {
+          console.error("Error removing team member:", error);
+          showToast("Failed to remove team member", "error");
+        } finally {
+          setConfirmState(null);
+        }
+      }
+    });
   };
 
   return (
@@ -267,13 +285,14 @@ export default function TeamsPage() {
 
               <div className="input-group">
                 <label>Access Level Role</label>
-                <select
+                <CustomSelect
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-                >
-                  <option value="team">Team Member</option>
-                  <option value="admin">Administrator</option>
-                </select>
+                  onChange={(role) => setFormData({ ...formData, role })}
+                  options={[
+                    { value: "team", label: "Team Member" },
+                    { value: "admin", label: "Administrator" }
+                  ]}
+                />
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
@@ -283,6 +302,51 @@ export default function TeamsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmState && confirmState.isOpen && (
+        <div className="modal-overlay" onClick={() => setConfirmState(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "450px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--card-bg)" }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+              <div style={{
+                background: "rgba(239, 68, 68, 0.1)",
+                color: "#ef4444",
+                padding: "10px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <Trash2 size={24} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "var(--text)" }}>{confirmState.title}</h3>
+                <p style={{ margin: "12px 0 24px 0", fontSize: "14px", color: "var(--text-secondary)", lineHeight: "1.5" }}>{confirmState.message}</p>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer", fontSize: "14px" }}
+                    onClick={() => setConfirmState(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: "8px 16px", borderRadius: "8px", background: "#ef4444", color: "#fff", cursor: "pointer", border: "none", fontWeight: "600", fontSize: "14px" }}
+                    onClick={() => {
+                      confirmState.onConfirm()
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

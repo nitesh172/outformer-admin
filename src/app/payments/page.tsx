@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useToast } from "@/lib/ToastContext";
 import { db } from "@/lib/firebase";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { 
   collection, 
   getDocs, 
@@ -371,52 +372,53 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
           {/* Status Dropdown */}
           <div className="input-group" style={{ marginBottom: 0 }}>
             <label style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 'bold', marginBottom: '6px' }}>Status</label>
-            <select 
-              value={statusFilter} 
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
+            <CustomSelect
+              value={statusFilter}
+              onChange={(val) => {
+                setStatusFilter(val);
                 setPage(1);
               }}
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="SUCCESS">SUCCESS</option>
-              <option value="PENDING">PENDING</option>
-              <option value="FAILED">FAILED</option>
-            </select>
+              options={[
+                { value: "ALL", label: "All Statuses" },
+                { value: "SUCCESS", label: "SUCCESS" },
+                { value: "PENDING", label: "PENDING" },
+                { value: "FAILED", label: "FAILED" }
+              ]}
+            />
           </div>
 
           {/* Timeframe Dropdown */}
           <div className="input-group" style={{ marginBottom: 0 }}>
             <label style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 'bold', marginBottom: '6px' }}>Timeframe</label>
-            <select 
-              value={timeframeFilter} 
-              onChange={(e) => {
-                setTimeframeFilter(e.target.value);
+            <CustomSelect
+              value={timeframeFilter}
+              onChange={(val) => {
+                setTimeframeFilter(val);
                 setPage(1);
               }}
-            >
-              <option value="ALL_TIME">All Time</option>
-              <option value="THIS_MONTH">This Month</option>
-              <option value="LAST_30_DAYS">Last 30 Days</option>
-              <option value="THIS_YEAR">This Year</option>
-            </select>
+              options={[
+                { value: "ALL_TIME", label: "All Time" },
+                { value: "THIS_MONTH", label: "This Month" },
+                { value: "LAST_30_DAYS", label: "Last 30 Days" },
+                { value: "THIS_YEAR", label: "This Year" }
+              ]}
+            />
           </div>
 
           {/* Gateway Dropdown */}
           <div className="input-group" style={{ marginBottom: 0 }}>
             <label style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 'bold', marginBottom: '6px' }}>Gateway</label>
-            <select 
-              value={gatewayFilter} 
-              onChange={(e) => {
-                setGatewayFilter(e.target.value);
+            <CustomSelect
+              value={gatewayFilter}
+              onChange={(val) => {
+                setGatewayFilter(val);
                 setPage(1);
               }}
-            >
-              <option value="ALL">All Gateways</option>
-              {uniqueGateways.map(g => (
-                <option key={g} value={g}>{g.toUpperCase()}</option>
-              ))}
-            </select>
+              options={[
+                { value: "ALL", label: "All Gateways" },
+                ...uniqueGateways.map(g => ({ value: g, label: g.toUpperCase() }))
+              ]}
+            />
           </div>
         </div>
 
@@ -624,7 +626,7 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', maxHeight: 'calc(100vh - 120px)', paddingRight: '4px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', maxHeight: 'calc(100dvh - 120px)', paddingRight: '4px' }}>
               
               {/* Payment Summary Header */}
               <div style={{ 

@@ -10,7 +10,9 @@ import {
   ChevronRight,
   ArrowLeft,
   Search,
-  Sparkles
+  Sparkles,
+  X,
+  Edit2
 } from "lucide-react"
 import { appCheck } from "@/lib/firebase"
 import { getToken } from "firebase/app-check"
@@ -40,6 +42,13 @@ type ViewState =
   | { type: "category-detail"; categoryId: string }
   | { type: "specialization-detail"; categoryId: string; specializationId: string };
 
+type OffcanvasState =
+  | { type: null }
+  | { type: "add-category" }
+  | { type: "edit-category"; categoryId: string; label: string }
+  | { type: "add-specialization"; categoryId: string }
+  | { type: "edit-specialization"; categoryId: string; specializationId: string; label: string; prompt: string };
+
 export default function ConfigPage() {
   const { isAdmin, user } = useAuth()
   const { showToast } = useToast()
@@ -53,6 +62,33 @@ export default function ConfigPage() {
 
   // Search state for specializations
   const [specSearchQuery, setSpecSearchQuery] = useState("")
+
+  // Offcanvas state
+  const [offcanvas, setOffcanvas] = useState<OffcanvasState>({ type: null })
+  const [formLabel, setFormLabel] = useState("")
+  const [formPrompt, setFormPrompt] = useState("")
+
+  // Custom UI confirmation modal state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  } | null>(null)
+
+  const openOffcanvas = (state: OffcanvasState) => {
+    setOffcanvas(state)
+    if (state.type === "edit-category") {
+      setFormLabel(state.label)
+      setFormPrompt("")
+    } else if (state.type === "edit-specialization") {
+      setFormLabel(state.label)
+      setFormPrompt(state.prompt)
+    } else {
+      setFormLabel("")
+      setFormPrompt("")
+    }
+  }
 
   async function fetchConfig() {
     setLoading(true)
@@ -136,18 +172,17 @@ export default function ConfigPage() {
     })
   }
 
-  const addCategory = () => {
+  const handleAddCategorySubmit = (label: string) => {
     if (!config) return
-    const label = prompt("Enter category label (e.g. Design):")
-    if (!label) return
-    const id = label.toLowerCase().replace(/\s+/g, "-")
+    if (!label.trim()) return
+    const id = label.trim().toLowerCase().replace(/\s+/g, "-")
 
     if (config.categories.some((c) => c.id === id)) {
       showToast("Category already exists!", "error")
       return
     }
 
-    const newCategories = [...config.categories, { id, label }]
+    const newCategories = [...config.categories, { id, label: label.trim() }]
     const newSpecializations = { ...config.specializations, [id]: [] }
     const newPrompts = { ...config.prompts, [id]: "" }
 
@@ -157,39 +192,60 @@ export default function ConfigPage() {
       specializations: newSpecializations,
       prompts: newPrompts,
     })
+    setOffcanvas({ type: null })
     setViewState({ type: "category-detail", categoryId: id })
+  }
+
+  const handleEditCategorySubmit = (categoryId: string, newLabel: string) => {
+    if (!config) return
+    if (!newLabel.trim()) return
+
+    const newCategories = config.categories.map((c) =>
+      c.id === categoryId ? { ...c, label: newLabel.trim() } : c
+    )
+
+    setConfig({
+      ...config,
+      categories: newCategories,
+    })
+    setOffcanvas({ type: null })
+    showToast("Category updated", "success")
   }
 
   const removeCategory = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!config) return
-    if (
-      !confirm(
-        `Are you sure you want to remove the category "${config.categories.find((c) => c.id === id)?.label}" and all its specializations?`,
-      )
-    )
-      return
 
-    const newCategories = config.categories.filter((c) => c.id !== id)
-    const newSpecializations = { ...config.specializations }
-    delete newSpecializations[id]
-    const newPrompts = { ...config.prompts }
-    delete newPrompts[id]
+    const categoryLabel = config.categories.find((c) => c.id === id)?.label || id
 
-    setConfig({
-      ...config,
-      categories: newCategories,
-      specializations: newSpecializations,
-      prompts: newPrompts,
+    setConfirmState({
+      isOpen: true,
+      title: "Remove Category",
+      message: `Are you sure you want to remove the category "${categoryLabel}" and all its specializations?`,
+      onConfirm: () => {
+        const newCategories = config.categories.filter((c) => c.id !== id)
+        const newSpecializations = { ...config.specializations }
+        delete newSpecializations[id]
+        const newPrompts = { ...config.prompts }
+        delete newPrompts[id]
+
+        setConfig({
+          ...config,
+          categories: newCategories,
+          specializations: newSpecializations,
+          prompts: newPrompts,
+        })
+        setViewState({ type: "categories" })
+        setConfirmState(null)
+        showToast("Category removed", "success")
+      }
     })
-    setViewState({ type: "categories" })
   }
 
-  const addSpecialization = (categoryId: string) => {
+  const handleAddSpecializationSubmit = (categoryId: string, label: string) => {
     if (!config) return
-    const label = prompt("Enter specialization label (e.g. Figma):")
-    if (!label) return
-    const id = label.toLowerCase().replace(/\s+/g, "-")
+    if (!label.trim()) return
+    const id = label.trim().toLowerCase().replace(/\s+/g, "-")
 
     const currentSpecs = config.specializations[categoryId] || []
     if (currentSpecs.some((s) => s.id === id)) {
@@ -197,7 +253,7 @@ export default function ConfigPage() {
       return
     }
 
-    const newSpecs = [...currentSpecs, { id, label, prompt: "" }]
+    const newSpecs = [...currentSpecs, { id, label: label.trim(), prompt: "" }]
     setConfig({
       ...config,
       specializations: {
@@ -205,27 +261,58 @@ export default function ConfigPage() {
         [categoryId]: newSpecs,
       },
     })
+    setOffcanvas({ type: null })
     setViewState({ type: "specialization-detail", categoryId, specializationId: id })
+  }
+
+  const handleEditSpecializationSubmit = (categoryId: string, specializationId: string, newLabel: string, newPrompt: string) => {
+    if (!config) return
+    if (!newLabel.trim()) return
+
+    const currentSpecs = config.specializations[categoryId] || []
+    const newSpecs = currentSpecs.map((s) =>
+      s.id === specializationId ? { ...s, label: newLabel.trim(), prompt: newPrompt } : s
+    )
+
+    setConfig({
+      ...config,
+      specializations: {
+        ...config.specializations,
+        [categoryId]: newSpecs,
+      },
+    })
+    setOffcanvas({ type: null })
+    showToast("Specialization updated", "success")
   }
 
   const removeSpecialization = (categoryId: string, specId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!config) return
-    if (!confirm("Are you sure you want to remove this specialization?")) return
 
-    const newSpecs = config.specializations[categoryId].filter(
-      (s) => s.id !== specId,
-    )
-    setConfig({
-      ...config,
-      specializations: {
-        ...config.specializations,
-        [categoryId]: newSpecs,
-      },
+    const specLabel = config.specializations[categoryId]?.find((s) => s.id === specId)?.label || specId
+
+    setConfirmState({
+      isOpen: true,
+      title: "Remove Specialization",
+      message: `Are you sure you want to remove the specialization "${specLabel}"?`,
+      onConfirm: () => {
+        const newSpecs = config.specializations[categoryId].filter(
+          (s) => s.id !== specId,
+        )
+        setConfig({
+          ...config,
+          specializations: {
+            ...config.specializations,
+            [categoryId]: newSpecs,
+          },
+        })
+        if (viewState.type === "specialization-detail" && viewState.specializationId === specId) {
+          setViewState({ type: "category-detail", categoryId })
+        }
+        setConfirmState(null)
+        showToast("Specialization removed", "success")
+      }
     })
-    if (viewState.type === "specialization-detail" && viewState.specializationId === specId) {
-      setViewState({ type: "category-detail", categoryId })
-    }
   }
 
   // Filtered specializations for Level 2 search
@@ -340,7 +427,7 @@ export default function ConfigPage() {
                 <h2 style={{ fontSize: "20px", fontWeight: "700" }}>Manage Categories</h2>
                 <button
                   className="btn btn-primary"
-                  onClick={addCategory}
+                  onClick={() => openOffcanvas({ type: "add-category" })}
                   style={{ display: "flex", alignItems: "center", gap: "6px", borderRadius: "8px", padding: "8px 16px" }}
                 >
                   <Plus size={16} /> New Category
@@ -382,19 +469,34 @@ export default function ConfigPage() {
                           Configure <ChevronRight size={14} />
                         </span>
 
-                        <button
-                          onClick={(e) => removeCategory(cat.id, e)}
-                          style={{
-                            color: "#ef4444",
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            padding: "4px",
-                            opacity: 0.6
-                          }}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }} onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => openOffcanvas({ type: "edit-category", categoryId: cat.id, label: cat.label })}
+                            style={{
+                              color: "var(--primary)",
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              padding: "4px",
+                              opacity: 0.8
+                            }}
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={(e) => removeCategory(cat.id, e)}
+                            style={{
+                              color: "#ef4444",
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              padding: "4px",
+                              opacity: 0.6
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -438,7 +540,7 @@ export default function ConfigPage() {
                   </div>
                   <button
                     className="btn btn-outline"
-                    onClick={() => addSpecialization(viewState.categoryId)}
+                    onClick={() => openOffcanvas({ type: "add-specialization", categoryId: viewState.categoryId })}
                     style={{ padding: "6px 12px", fontSize: "14px" }}
                   >
                     <Plus size={16} /> Add Specialization
@@ -482,14 +584,30 @@ export default function ConfigPage() {
                           <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
                             {spec.prompt ? "Custom prompt set" : "No custom prompt"}
                           </span>
-                          <button
-                            onClick={(e) => removeSpecialization(viewState.categoryId, spec.id, e)}
-                            style={{
-                              color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: "4px", opacity: 0.7
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }} onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => openOffcanvas({
+                                type: "edit-specialization",
+                                categoryId: viewState.categoryId,
+                                specializationId: spec.id,
+                                label: spec.label,
+                                prompt: spec.prompt || ""
+                              })}
+                              style={{
+                                color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "4px", opacity: 0.8
+                              }}
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={(e) => removeSpecialization(viewState.categoryId, spec.id, e)}
+                              style={{
+                                color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: "4px", opacity: 0.7
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                           <ChevronRight size={16} />
                         </div>
                       </div>
@@ -609,6 +727,138 @@ export default function ConfigPage() {
                   onChange={(e) => updateInstruction("snipInstructions", e.target.value)}
                   style={{ ...promptEditorStyle, minHeight: "150px" }}
                 />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Offcanvas Drawer */}
+      {offcanvas.type !== null && (
+        <div className="offcanvas-overlay" onClick={() => setOffcanvas({ type: null })}>
+          <div className="offcanvas-panel" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+              <h2 style={{ margin: 0, fontSize: "22px", fontWeight: "700" }}>
+                {offcanvas.type === "add-category" && "Add New Category"}
+                {offcanvas.type === "edit-category" && "Edit Category"}
+                {offcanvas.type === "add-specialization" && "Add New Specialization"}
+                {offcanvas.type === "edit-specialization" && "Edit Specialization"}
+              </h2>
+              <button className="btn btn-outline" style={{ padding: '8px' }} onClick={() => setOffcanvas({ type: null })}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (offcanvas.type === "add-category") {
+                  handleAddCategorySubmit(formLabel)
+                } else if (offcanvas.type === "edit-category") {
+                  handleEditCategorySubmit(offcanvas.categoryId, formLabel)
+                } else if (offcanvas.type === "add-specialization") {
+                  handleAddSpecializationSubmit(offcanvas.categoryId, formLabel)
+                } else if (offcanvas.type === "edit-specialization") {
+                  handleEditSpecializationSubmit(offcanvas.categoryId, offcanvas.specializationId, formLabel, formPrompt)
+                }
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1 }}
+            >
+              <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontSize: "14px", fontWeight: "600" }}>Label</label>
+                <input
+                  type="text"
+                  placeholder={
+                    offcanvas.type.includes("category")
+                      ? "E.g. Design"
+                      : "E.g. Figma"
+                  }
+                  required
+                  value={formLabel}
+                  onChange={(e) => setFormLabel(e.target.value)}
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: "8px",
+                    border: "1px solid var(--border)", background: "var(--bg-secondary)", color: "var(--text)"
+                  }}
+                />
+              </div>
+
+              {offcanvas.type === "edit-specialization" && (
+                <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: "14px", fontWeight: "600" }}>Custom Instructions (Prompt)</label>
+                  <textarea
+                    rows={12}
+                    placeholder="Enter custom instructions for this specialization..."
+                    value={formPrompt}
+                    onChange={(e) => setFormPrompt(e.target.value)}
+                    style={{
+                      ...promptEditorStyle,
+                      minHeight: "250px"
+                    }}
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: 'auto', paddingTop: '20px' }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer" }}
+                  onClick={() => setOffcanvas({ type: null })}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1, padding: "10px", borderRadius: "8px", background: "var(--primary)", color: "#fff", cursor: "pointer", fontWeight: "600" }}
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Confirmation Modal */}
+      {confirmState && confirmState.isOpen && (
+        <div className="modal-overlay" onClick={() => setConfirmState(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "450px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--card-bg)" }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+              <div style={{
+                background: "rgba(239, 68, 68, 0.1)",
+                color: "#ef4444",
+                padding: "10px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <Trash2 size={24} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "var(--text)" }}>{confirmState.title}</h3>
+                <p style={{ margin: "12px 0 24px 0", fontSize: "14px", color: "var(--text-secondary)", lineHeight: "1.5" }}>{confirmState.message}</p>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer", fontSize: "14px" }}
+                    onClick={() => setConfirmState(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: "8px 16px", borderRadius: "8px", background: "#ef4444", color: "#fff", cursor: "pointer", border: "none", fontWeight: "600", fontSize: "14px" }}
+                    onClick={() => {
+                      confirmState.onConfirm()
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           </div>

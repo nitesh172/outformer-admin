@@ -32,6 +32,14 @@ export default function CouponsPage() {
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
+
+  // Custom UI confirmation modal state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  } | null>(null)
   const [newCoupon, setNewCoupon] = useState<Partial<Coupon>>({
     code: '',
     description: '',
@@ -115,13 +123,26 @@ export default function CouponsPage() {
   };
 
   const handleDeleteCoupon = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this coupon?")) return;
-    try {
-      await deleteDoc(doc(db, "coupons", id));
-      fetchCoupons();
-    } catch (error) {
-      console.error("Error deleting coupon:", error);
-    }
+    const coupon = coupons.find(c => c.id === id);
+    if (!coupon) return;
+
+    setConfirmState({
+      isOpen: true,
+      title: "Delete Coupon",
+      message: `Are you sure you want to delete the coupon "${coupon.code}"?`,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, "coupons", id));
+          fetchCoupons();
+          showToast("Coupon deleted successfully", "success");
+        } catch (error) {
+          console.error("Error deleting coupon:", error);
+          showToast("Failed to delete coupon", "error");
+        } finally {
+          setConfirmState(null);
+        }
+      }
+    });
   };
 
   const openEditModal = (coupon: Coupon) => {
@@ -444,6 +465,51 @@ export default function CouponsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmState && confirmState.isOpen && (
+        <div className="modal-overlay" onClick={() => setConfirmState(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "450px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--card-bg)" }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+              <div style={{
+                background: "rgba(239, 68, 68, 0.1)",
+                color: "#ef4444",
+                padding: "10px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <Trash2 size={24} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "var(--text)" }}>{confirmState.title}</h3>
+                <p style={{ margin: "12px 0 24px 0", fontSize: "14px", color: "var(--text-secondary)", lineHeight: "1.5" }}>{confirmState.message}</p>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer", fontSize: "14px" }}
+                    onClick={() => setConfirmState(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: "8px 16px", borderRadius: "8px", background: "#ef4444", color: "#fff", cursor: "pointer", border: "none", fontWeight: "600", fontSize: "14px" }}
+                    onClick={() => {
+                      confirmState.onConfirm()
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

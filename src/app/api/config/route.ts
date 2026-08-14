@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   try {
     validateEnv();
     rateLimit(request);
-    await authenticateRequest(request, true); // Only administrators can update configuration
+    await authenticateRequest(request, false); // Admins and team members can update configuration
 
     if (!API_SECRET) {
       throw new Error("API_SECRET is missing");

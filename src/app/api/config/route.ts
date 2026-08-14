@@ -1,56 +1,50 @@
-import { NextResponse } from "next/server"
+import { NextResponse } from "next/server";
+import { validateEnv } from "@/lib/env";
+import { rateLimit, authenticateRequest, handleError } from "@/lib/api-helpers";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-const API_SECRET = process.env.API_SECRET
+const API_URL = process.env.WORKER_PROXY_URL;
+const API_SECRET = process.env.API_SECRET;
 
-export async function GET() {
-  console.log(`📡 Config Proxy: GET request to ${API_URL}/config/interview`)
-
-  if (!API_SECRET) {
-    console.error(
-      "❌ Config Proxy: API_SECRET is not defined in environment variables",
-    )
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 },
-    )
-  }
-
+export async function GET(request: Request) {
   try {
+    validateEnv();
+    rateLimit(request);
+    await authenticateRequest(request, false); // team members and admins can view configuration
+
+    if (!API_SECRET) {
+      throw new Error("API_SECRET is missing");
+    }
+
     const response = await fetch(`${API_URL}/config/interview`, {
+      method: "GET",
       headers: {
         "x-outerformer-api-key": API_SECRET,
       },
       cache: "no-store",
-    })
+    });
 
-    console.log(
-      `📡 Config Proxy: Backend responded with status ${response.status}`,
-    )
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`Backend status ${response.status}: ${responseText}`);
+    }
 
-    const data = await response.json()
-    return NextResponse.json(data)
+    return NextResponse.json(JSON.parse(responseText));
   } catch (error: any) {
-    console.error("❌ Config Proxy Error:", error.message)
-    return NextResponse.json(
-      { error: "Failed to fetch config", details: error.message },
-      { status: 500 },
-    )
+    return handleError(error);
   }
 }
 
 export async function POST(request: Request) {
-  console.log(`📡 Config Proxy: POST request to ${API_URL}/config/interview`)
-
-  if (!API_SECRET) {
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 },
-    )
-  }
-
   try {
-    const body = await request.json()
+    validateEnv();
+    rateLimit(request);
+    await authenticateRequest(request, true); // Only administrators can update configuration
+
+    if (!API_SECRET) {
+      throw new Error("API_SECRET is missing");
+    }
+
+    const body = await request.json();
     const response = await fetch(`${API_URL}/config/interview`, {
       method: "POST",
       headers: {
@@ -58,19 +52,15 @@ export async function POST(request: Request) {
         "x-outerformer-api-key": API_SECRET,
       },
       body: JSON.stringify(body),
-    })
+    });
 
-    console.log(
-      `📡 Config Proxy: Backend responded with status ${response.status}`,
-    )
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`Backend status ${response.status}: ${responseText}`);
+    }
 
-    const data = await response.json()
-    return NextResponse.json(data)
+    return NextResponse.json(JSON.parse(responseText));
   } catch (error: any) {
-    console.error("❌ Config Proxy Save Error:", error.message)
-    return NextResponse.json(
-      { error: "Failed to update config", details: error.message },
-      { status: 500 },
-    )
+    return handleError(error);
   }
 }

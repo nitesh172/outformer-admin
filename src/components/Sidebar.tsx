@@ -10,9 +10,10 @@ import {
   Settings, 
   LayoutDashboard,
   ShieldCheck,
+  Shield,
   LogOut,
   User as UserIcon,
-  History
+  CreditCard
 } from "lucide-react";
 
 const navItems = [
@@ -20,7 +21,8 @@ const navItems = [
   { label: "Users", href: "/users", icon: Users },
   { label: "Coupons", href: "/coupons", icon: Ticket },
   { label: "Packages", href: "/packages", icon: Package },
-  { label: "Ledger", href: "/ledger", icon: History },
+  { label: "Payments", href: "/payments", icon: CreditCard },
+  { label: "Teams", href: "/teams", icon: Shield },
   { label: "Config", href: "/config", icon: Settings },
 ];
 
@@ -29,7 +31,7 @@ export default function Sidebar() {
   const { user, isAdmin, logout } = useAuth();
 
   const visibleNavItems = navItems.filter((item) => {
-    if (item.href === "/coupons" || item.href === "/packages") {
+    if (item.href === "/packages" || item.href === "/payments") {
       return isAdmin;
     }
     return true;

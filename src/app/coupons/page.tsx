@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, updateDoc, deleteDoc } from "firebase/firestore";
-import { Ticket, Plus, Trash2, Calendar, Percent, IndianRupee, Clock, Pencil } from "lucide-react";
+import { Ticket, Plus, Trash2, Percent, IndianRupee, Pencil, X } from "lucide-react";
 
 import { useToast } from "@/lib/ToastContext";
+import { useAuth } from "@/lib/AuthContext";
 
 interface Coupon {
   id: string;
@@ -25,6 +26,7 @@ interface Coupon {
 
 export default function CouponsPage() {
   const { showToast } = useToast();
+  const { isAdmin } = useAuth();
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -163,13 +165,15 @@ export default function CouponsPage() {
           <h1>Coupons Management</h1>
           <p>Create and manage discount codes</p>
         </div>
-        <button className="btn btn-primary" onClick={() => {
-          setEditingCoupon(null);
-          setShowModal(true);
-        }}>
-          <Plus size={20} />
-          Create Coupon
-        </button>
+        {isAdmin && (
+          <button className="btn btn-primary" onClick={() => {
+            setEditingCoupon(null);
+            setShowModal(true);
+          }}>
+            <Plus size={20} />
+            Create Coupon
+          </button>
+        )}
       </div>
 
       <div className="table-container">
@@ -180,7 +184,7 @@ export default function CouponsPage() {
               <th>Discount</th>
               <th>Usage</th>
               <th>Status</th>
-              <th>Actions</th>
+              {isAdmin && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -188,10 +192,20 @@ export default function CouponsPage() {
               [...Array(3)].map((_, i) => (
                 <tr key={i}><td colSpan={5}><div className="skeleton" style={{ height: '24px' }}></div></td></tr>
               ))
-            ) : coupons.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px' }}>No coupons found</td></tr>
+            ) : coupons.filter(coupon => !coupon.usageLimit || (coupon.usedCount || 0) < coupon.usageLimit).length === 0 ? (
+              <tr>
+                <td colSpan={5}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '48px 24px', textAlign: 'center' }}>
+                    <Ticket size={48} style={{ color: '#9ca3af', opacity: 0.5 }} />
+                    <div style={{ fontWeight: '700', fontSize: '16px', color: 'var(--foreground)' }}>No Active Coupons Available</div>
+                    <div style={{ fontSize: '13px', color: '#9ca3af', maxWidth: '280px' }}>
+                      There are no active or unutilized discount coupons. Create one to get started!
+                    </div>
+                  </div>
+                </td>
+              </tr>
             ) : (
-              coupons.map((coupon) => (
+              coupons.filter(coupon => !coupon.usageLimit || (coupon.usedCount || 0) < coupon.usageLimit).map((coupon) => (
                 <tr key={coupon.id}>
                   <td>
                     <div style={{ fontWeight: 'bold', color: 'var(--primary)', letterSpacing: '1px' }}>
@@ -214,40 +228,54 @@ export default function CouponsPage() {
                   </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ flex: 1, height: '6px', background: '#333', borderRadius: '3px', maxWidth: '100px' }}>
+                      <div style={{ flex: 1, height: '6px', background: 'var(--muted)', borderRadius: '0px', maxWidth: '100px' }}>
                         <div style={{ 
                           height: '100%', 
                           width: `${Math.min(100, ((coupon.usedCount || 0) / (coupon.usageLimit || 1)) * 100)}%`,
                           background: 'var(--primary)',
-                          borderRadius: '3px'
+                          borderRadius: '0px'
                         }}></div>
                       </div>
                       <span style={{ fontSize: '12px' }}>{coupon.usedCount || 0} / {coupon.usageLimit || '∞'}</span>
                     </div>
                   </td>
                   <td>
-                    <button onClick={() => toggleStatus(coupon)}>
+                    {isAdmin ? (
+                      <button
+                        className="btn btn-outline"
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                        onClick={() => toggleStatus(coupon)}
+                      >
+                        <span className={`badge ${coupon.status === 'ACTIVE' ? 'badge-success' : 'badge-danger'}`}>
+                          {coupon.status}
+                        </span>
+                      </button>
+                    ) : (
                       <span className={`badge ${coupon.status === 'ACTIVE' ? 'badge-success' : 'badge-danger'}`}>
                         {coupon.status}
                       </span>
-                    </button>
+                    )}
                   </td>
-                  <td style={{ display: 'flex', gap: '8px' }}>
-                    <button 
-                      className="btn btn-outline" 
-                      style={{ padding: '6px' }}
-                      onClick={() => openEditModal(coupon)}
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button 
-                      className="btn btn-outline" 
-                      style={{ color: '#ef4444', padding: '6px' }}
-                      onClick={() => handleDeleteCoupon(coupon.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
+                  {isAdmin && (
+                    <td>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button 
+                          className="btn btn-outline" 
+                          style={{ padding: '6px 12px' }}
+                          onClick={() => openEditModal(coupon)}
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button 
+                          className="btn btn-outline" 
+                          style={{ color: '#ef4444', padding: '6px 12px' }}
+                          onClick={() => handleDeleteCoupon(coupon.id)}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))
             )}
@@ -256,10 +284,16 @@ export default function CouponsPage() {
       </div>
 
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h2 style={{ marginBottom: '24px' }}>{editingCoupon ? 'Edit Coupon' : 'Create New Coupon'}</h2>
-            <form onSubmit={handleSaveCoupon}>
+        <div className="offcanvas-overlay" onClick={() => { setShowModal(false); setEditingCoupon(null); }}>
+          <div className="offcanvas-panel" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+              <h2 style={{ margin: 0 }}>{editingCoupon ? 'Edit Coupon' : 'Create New Coupon'}</h2>
+              <button className="btn btn-outline" style={{ padding: '8px' }} onClick={() => { setShowModal(false); setEditingCoupon(null); }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCoupon} style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1 }}>
               <div className="input-group">
                 <label>Coupon Code</label>
                 <input 
@@ -393,7 +427,8 @@ export default function CouponsPage() {
                   />
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px' }}>
+              
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
                 <button 
                   type="button" 
                   className="btn btn-outline" 

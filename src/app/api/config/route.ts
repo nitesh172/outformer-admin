@@ -1,118 +1,66 @@
-import { NextResponse } from "next/server"
+import { NextResponse } from "next/server";
+import { validateEnv } from "@/lib/env";
+import { rateLimit, authenticateRequest, handleError } from "@/lib/api-helpers";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-const API_SECRET = process.env.API_SECRET
+const API_URL = process.env.WORKER_PROXY_URL;
+const API_SECRET = process.env.API_SECRET;
 
-export async function GET() {
-  console.log(`📡 Config Proxy: GET request to ${API_URL}/config/interview`)
-
-  if (!API_SECRET) {
-    console.error(
-      "❌ Config Proxy: API_SECRET is not defined in environment variables",
-    )
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 },
-    )
-  }
-
+export async function GET(request: Request) {
   try {
+    validateEnv();
+    rateLimit(request);
+    await authenticateRequest(request, false); // team members and admins can view configuration
+
+    if (!API_SECRET) {
+      throw new Error("API_SECRET is missing");
+    }
+
     const response = await fetch(`${API_URL}/config/interview`, {
+      method: "GET",
       headers: {
         "x-outerformer-api-key": API_SECRET,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
       cache: "no-store",
-    })
+    });
 
-    console.log(
-      `📡 Config Proxy: Backend responded with status ${response.status}`,
-    )
-
-    const responseText = await response.text()
-
+    const responseText = await response.text();
     if (!response.ok) {
-      console.error(
-        `❌ Config Proxy: Backend returned error status ${response.status}. Body: ${responseText}`
-      )
-      return NextResponse.json(
-        { error: `Backend returned status ${response.status}`, details: responseText },
-        { status: response.status }
-      )
+      throw new Error(`Backend status ${response.status}: ${responseText}`);
     }
 
-    try {
-      const data = JSON.parse(responseText)
-      return NextResponse.json(data)
-    } catch (parseError: any) {
-      console.error(
-        `❌ Config Proxy: Failed to parse backend response as JSON. Body: ${responseText}`
-      )
-      return NextResponse.json(
-        { error: "Invalid JSON response from backend", details: responseText },
-        { status: 500 }
-      )
-    }
+    return NextResponse.json(JSON.parse(responseText));
   } catch (error: any) {
-    console.error("❌ Config Proxy Error:", error.message || error)
-    return NextResponse.json(
-      { error: "Failed to fetch config", details: error.message || String(error) },
-      { status: 500 }
-    )
+    return handleError(error);
   }
 }
 
 export async function POST(request: Request) {
-  console.log(`📡 Config Proxy: POST request to ${API_URL}/config/interview`)
-
-  if (!API_SECRET) {
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 },
-    )
-  }
-
   try {
-    const body = await request.json()
+    validateEnv();
+    rateLimit(request);
+    await authenticateRequest(request, true); // Only administrators can update configuration
+
+    if (!API_SECRET) {
+      throw new Error("API_SECRET is missing");
+    }
+
+    const body = await request.json();
     const response = await fetch(`${API_URL}/config/interview`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-outerformer-api-key": API_SECRET,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
       body: JSON.stringify(body),
-    })
+    });
 
-    const responseText = await response.text()
-
+    const responseText = await response.text();
     if (!response.ok) {
-      console.error(
-        `❌ Config Proxy Save Error: Backend returned error status ${response.status}. Body: ${responseText}`
-      )
-      return NextResponse.json(
-        { error: `Backend returned status ${response.status}`, details: responseText },
-        { status: response.status }
-      )
+      throw new Error(`Backend status ${response.status}: ${responseText}`);
     }
 
-    try {
-      const data = JSON.parse(responseText)
-      return NextResponse.json(data)
-    } catch (parseError: any) {
-      console.error(
-        `❌ Config Proxy Save Error: Failed to parse backend response as JSON. Body: ${responseText}`
-      )
-      return NextResponse.json(
-        { error: "Invalid JSON response from backend", details: responseText },
-        { status: 500 }
-      )
-    }
+    return NextResponse.json(JSON.parse(responseText));
   } catch (error: any) {
-    console.error("❌ Config Proxy Save Error:", error.message || error)
-    return NextResponse.json(
-      { error: "Failed to update config", details: error.message || String(error) },
-      { status: 500 }
-    )
+    return handleError(error);
   }
 }

@@ -1,32 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { auth } from "@/lib/firebase";
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  updateProfile
-} from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Mail, Lock, User, ArrowRight, Loader2 } from "lucide-react";
+import { ShieldCheck, Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  useState(() => {
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("error") === "unauthorized") {
         setError("Access denied. Only admins and team members are authorized.");
       }
     }
-  });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,20 +28,24 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      let userCredential;
-      if (isLogin) {
-        userCredential = await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        if (name) {
-          await updateProfile(userCredential.user, { displayName: name });
-        }
-      }
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
 
       // Check claims immediately
       const tokenResult = await userCredential.user.getIdTokenResult(true);
       const claims = tokenResult.claims;
-      if (!claims.admin && !claims.team_member) {
+      let isAuthorized = !!claims.admin || !!claims.team_member;
+
+      if (!isAuthorized && userCredential.user.email) {
+        const { collection, query, where, getDocs } = await import("firebase/firestore");
+        const { db } = await import("@/lib/firebase");
+        const q = query(collection(db, "users"), where("email", "==", userCredential.user.email.toLowerCase()), where("role", "in", ["team", "admin"]));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          isAuthorized = true;
+        }
+      }
+
+      if (!isAuthorized) {
         await auth.signOut();
         setError("Access denied. Only admins and team members are authorized.");
         setLoading(false);
@@ -56,52 +54,49 @@ export default function LoginPage() {
 
       router.push("/");
     } catch (err: any) {
-      console.error("Auth error:", err);
-      setError(err.message || "Authentication failed");
+      const errorCode = err?.code;
+      let friendlyMsg = "Authentication failed. Please try again.";
+
+      if (errorCode === "auth/invalid-credential" || errorCode === "auth/wrong-password" || errorCode === "auth/user-not-found") {
+        friendlyMsg = "Invalid email or password.";
+      } else if (errorCode === "auth/too-many-requests") {
+        friendlyMsg = "Access temporarily disabled due to many failed login attempts. Please try again later or reset password.";
+      } else if (errorCode === "auth/invalid-email") {
+        friendlyMsg = "Invalid email address format.";
+      } else if (errorCode === "auth/user-disabled") {
+        friendlyMsg = "This user account has been disabled.";
+      } else {
+        console.error("Auth system error:", err);
+        friendlyMsg = err.message || "Authentication failed";
+      }
+      setError(friendlyMsg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="login-container">
-      <div className="login-card">
-        <div className="login-header">
-          <div className="login-logo">
-            <ShieldCheck size={40} />
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="auth-header">
+          <div className="auth-logo">
+            <ShieldCheck size={32} />
           </div>
-          <h1>{isLogin ? "Welcome Back" : "Create Account"}</h1>
-          <p>{isLogin ? "Enter your credentials to access the admin panel" : "Sign up to start managing your assistant"}</p>
+          <h1>Welcome Back</h1>
+          <p>Enter your credentials to access the admin panel</p>
         </div>
 
         {error && (
-          <div className="error-banner">
+          <div className="auth-error">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="login-form">
-          {!isLogin && (
-            <div className="input-group">
-              <label htmlFor="name">Full Name</label>
-              <div className="input-wrapper">
-                <User className="input-icon" size={18} />
-                <input 
-                  id="name"
-                  type="text" 
-                  placeholder="John Doe" 
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required={!isLogin}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="input-group">
+        <form onSubmit={handleSubmit} className="auth-form">
+          <div className="auth-field">
             <label htmlFor="email">Email Address</label>
-            <div className="input-wrapper">
-              <Mail className="input-icon" size={18} />
+            <div className="auth-input-wrap">
+              <Mail className="auth-input-icon" size={18} />
               <input 
                 id="email"
                 type="email" 
@@ -113,10 +108,10 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="input-group">
+          <div className="auth-field">
             <label htmlFor="password">Password</label>
-            <div className="input-wrapper">
-              <Lock className="input-icon" size={18} />
+            <div className="auth-input-wrap">
+              <Lock className="auth-input-icon" size={18} />
               <input 
                 id="password"
                 type="password" 
@@ -128,174 +123,16 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <button type="submit" className="btn btn-primary login-btn" disabled={loading}>
-            {loading ? <Loader2 className="spin" size={20} /> : (
+          <button type="submit" className="auth-submit" disabled={loading}>
+            {loading ? <Loader2 className="auth-spinner" size={20} /> : (
               <>
-                {isLogin ? "Sign In" : "Create Account"}
+                Sign In
                 <ArrowRight size={20} />
               </>
             )}
           </button>
         </form>
-
-        <div className="login-footer">
-          <p>
-            {isLogin ? "Don't have an account?" : "Already have an account?"}
-            <button 
-              type="button" 
-              onClick={() => setIsLogin(!isLogin)}
-              className="toggle-auth"
-            >
-              {isLogin ? "Create one now" : "Sign in here"}
-            </button>
-          </p>
-        </div>
       </div>
-
-      <style jsx>{`
-        .login-container {
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: #000;
-          padding: 20px;
-        }
-
-        .login-card {
-          width: 100%;
-          max-width: 440px;
-          background: #0a0a0a;
-          border: 1px solid #1f1f1f;
-          border-radius: 24px;
-          padding: 40px;
-          box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-        }
-
-        .login-header {
-          text-align: center;
-          margin-bottom: 32px;
-        }
-
-        .login-logo {
-          width: 64px;
-          height: 64px;
-          background: rgba(59, 130, 246, 0.1);
-          color: #3b82f6;
-          border-radius: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin: 0 auto 20px;
-        }
-
-        .login-header h1 {
-          font-size: 24px;
-          font-weight: 700;
-          color: white;
-          margin-bottom: 8px;
-        }
-
-        .login-header p {
-          color: #9ca3af;
-          font-size: 14px;
-        }
-
-        .error-banner {
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          color: #ef4444;
-          padding: 12px;
-          border-radius: 12px;
-          font-size: 13px;
-          margin-bottom: 24px;
-          text-align: center;
-        }
-
-        .login-form {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-        }
-
-        .input-group label {
-          display: block;
-          font-size: 13px;
-          font-weight: 600;
-          color: #d1d5db;
-          margin-bottom: 8px;
-        }
-
-        .input-wrapper {
-          position: relative;
-          display: flex;
-          align-items: center;
-        }
-
-        .input-icon {
-          position: absolute;
-          left: 16px;
-          color: #6b7280;
-        }
-
-        .input-wrapper input {
-          width: 100%;
-          padding: 12px 16px 12px 48px;
-          background: #141414;
-          border: 1px solid #1f1f1f;
-          border-radius: 12px;
-          color: white;
-          font-size: 14px;
-          transition: all 0.2s;
-        }
-
-        .input-wrapper input:focus {
-          outline: none;
-          border-color: #3b82f6;
-          background: #1a1a1a;
-          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
-        }
-
-        .login-btn {
-          margin-top: 12px;
-          height: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          font-weight: 700;
-        }
-
-        .login-footer {
-          margin-top: 32px;
-          text-align: center;
-          font-size: 14px;
-          color: #9ca3af;
-        }
-
-        .toggle-auth {
-          background: none;
-          border: none;
-          color: #3b82f6;
-          font-weight: 600;
-          margin-left: 6px;
-          cursor: pointer;
-          padding: 0;
-        }
-
-        .toggle-auth:hover {
-          text-decoration: underline;
-        }
-
-        .spin {
-          animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }

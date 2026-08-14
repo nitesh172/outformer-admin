@@ -37,16 +37,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           // Force refresh token to get the latest custom claims
           const tokenResult = await u.getIdTokenResult(true);
-          const adminClaim = !!tokenResult.claims.admin;
-          const teamMemberClaim = !!tokenResult.claims.team_member;
+          let adminClaim = !!tokenResult.claims.admin;
+          let teamMemberClaim = !!tokenResult.claims.team_member;
+
+          if (!adminClaim && !teamMemberClaim && u.email) {
+            const { collection, query, where, getDocs } = await import("firebase/firestore");
+            const { db } = await import("./firebase");
+            const q = query(collection(db, "users"), where("email", "==", u.email.toLowerCase()), where("role", "in", ["team", "admin"]));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const docData = snap.docs[0].data();
+              adminClaim = docData.role === 'ADMIN';
+              teamMemberClaim = docData.role === 'TEAM_MEMBER' || docData.role === 'ADMIN';
+            }
+          }
 
           if (!adminClaim && !teamMemberClaim) {
-            console.warn("User does not have required custom claims. Signing out.");
+            console.warn("User does not have required custom claims or team record. Signing out.");
             await signOut(auth);
             setUser(null);
             setIsAdmin(false);
             setIsTeamMember(false);
-            showToast("Unauthorized. You must have admin or team member custom claims to login.", "error");
+            showToast("Unauthorized. You must have admin or team member access to login.", "error");
             if (pathname !== "/login") {
               router.push("/login?error=unauthorized");
             }
@@ -56,9 +68,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsTeamMember(teamMemberClaim);
 
             // Redirect if trying to access admin-only routes
-            if ((pathname === "/coupons" || pathname === "/packages") && !adminClaim) {
+            if ((pathname === "/packages" || pathname === "/payments") && !adminClaim) {
               console.warn(`Redirecting team member from admin route: ${pathname}`);
-              showToast("Access denied. Coupons and packages routes are only accessible by administrators.", "error");
+              showToast("Access denied. This route is only accessible by administrators.", "error");
               router.push("/");
             }
 

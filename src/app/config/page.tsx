@@ -386,7 +386,7 @@ export default function ConfigPage() {
       </div>
 
       {/* Tabs (only visible when not in drill-down details view on mobile) */}
-      <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--border)", paddingBottom: "8px" }}>
+      <div className="tabs-container" style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--border)", paddingBottom: "8px" }}>
         <button
           onClick={() => {
             setActiveTab("categories")
@@ -423,7 +423,7 @@ export default function ConfigPage() {
         <div style={{ width: "100%" }}>
           {viewState.type === "categories" && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <h2 style={{ fontSize: "20px", fontWeight: "700" }}>Manage Categories</h2>
                 <button
                   className="btn btn-primary"
@@ -533,7 +533,7 @@ export default function ConfigPage() {
 
               {/* Specializations Searchable List */}
               <div className="card" style={{ padding: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px", marginBottom: "16px" }}>
+                <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px", marginBottom: "16px" }}>
                   <div>
                     <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Specializations</h3>
                     <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>Search and configure custom prompts.</p>

@@ -5,6 +5,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { Plus, Edit, Trash2, X } from "lucide-react";
 import { useToast } from "@/lib/ToastContext";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 
 interface PricingPackage {
   id: string;
@@ -372,13 +373,14 @@ export default function PackagesPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
                 <div className="input-group">
                   <label>Status</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
+                  <CustomSelect
+                    value={formData.status || "ACTIVE"}
+                    onChange={(status) => setFormData({...formData, status})}
+                    options={[
+                      { value: "ACTIVE", label: "Active" },
+                      { value: "INACTIVE", label: "Inactive" }
+                    ]}
+                  />
                 </div>
                 <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '100%', marginTop: '10px' }}>
                   <input

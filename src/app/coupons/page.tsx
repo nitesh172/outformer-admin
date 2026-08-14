@@ -7,6 +7,7 @@ import { Ticket, Plus, Trash2, Percent, IndianRupee, Pencil, X } from "lucide-re
 
 import { useToast } from "@/lib/ToastContext";
 import { useAuth } from "@/lib/AuthContext";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 
 interface Coupon {
   id: string;
@@ -343,19 +344,20 @@ export default function CouponsPage() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-grid">
                 <div className="input-group">
                   <label>Type</label>
-                  <select 
-                    value={editingCoupon ? editingCoupon.type : newCoupon.type}
-                    onChange={(e) => editingCoupon
-                      ? setEditingCoupon({...editingCoupon, type: e.target.value as any})
-                      : setNewCoupon({...newCoupon, type: e.target.value as any})
+                  <CustomSelect
+                    value={editingCoupon ? editingCoupon.type : (newCoupon.type || "PERCENTAGE")}
+                    onChange={(type) => editingCoupon
+                      ? setEditingCoupon({...editingCoupon, type})
+                      : setNewCoupon({...newCoupon, type})
                     }
-                  >
-                    <option value="PERCENTAGE">Percentage</option>
-                    <option value="FIXED">Fixed Amount</option>
-                  </select>
+                    options={[
+                      { value: "PERCENTAGE", label: "Percentage" },
+                      { value: "FIXED", label: "Fixed Amount" }
+                    ]}
+                  />
                 </div>
                 <div className="input-group">
                   <label>Value</label>
@@ -371,7 +373,7 @@ export default function CouponsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-grid">
                 <div className="input-group">
                   <label>Usage Limit</label>
                   <input 
@@ -397,7 +399,7 @@ export default function CouponsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-grid">
                 <div className="input-group">
                   <label>Min Order (₹)</label>
                   <input 
@@ -411,42 +413,41 @@ export default function CouponsPage() {
                 </div>
                 <div className="input-group">
                   <label>Status</label>
-                  <select 
-                    value={editingCoupon ? editingCoupon.status : newCoupon.status}
-                    onChange={(e) => editingCoupon
-                      ? setEditingCoupon({...editingCoupon, status: e.target.value as any})
-                      : setNewCoupon({...newCoupon, status: e.target.value as any})
+                  <CustomSelect
+                    value={editingCoupon ? editingCoupon.status : (newCoupon.status || "ACTIVE")}
+                    onChange={(status) => editingCoupon
+                      ? setEditingCoupon({...editingCoupon, status})
+                      : setNewCoupon({...newCoupon, status})
                     }
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
+                    options={[
+                      { value: "ACTIVE", label: "Active" },
+                      { value: "INACTIVE", label: "Inactive" }
+                    ]}
+                  />
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div className="input-group">
-                  <label>Start Date</label>
-                  <input 
-                    type="datetime-local" 
-                    value={(editingCoupon ? editingCoupon.startDate : newCoupon.startDate) ?? ''}
-                    onChange={(e) => editingCoupon
-                      ? setEditingCoupon({...editingCoupon, startDate: e.target.value})
-                      : setNewCoupon({...newCoupon, startDate: e.target.value})
-                    }
-                  />
-                </div>
-                <div className="input-group">
-                  <label>End Date</label>
-                  <input 
-                    type="datetime-local" 
-                    value={(editingCoupon ? editingCoupon.endDate : newCoupon.endDate) ?? ''}
-                    onChange={(e) => editingCoupon
-                      ? setEditingCoupon({...editingCoupon, endDate: e.target.value})
-                      : setNewCoupon({...newCoupon, endDate: e.target.value})
-                    }
-                  />
-                </div>
+              <div className="input-group">
+                <label>Start Date</label>
+                <input 
+                  type="datetime-local" 
+                  value={(editingCoupon ? editingCoupon.startDate : newCoupon.startDate) ?? ''}
+                  onChange={(e) => editingCoupon
+                    ? setEditingCoupon({...editingCoupon, startDate: e.target.value})
+                    : setNewCoupon({...newCoupon, startDate: e.target.value})
+                  }
+                />
+              </div>
+              <div className="input-group">
+                <label>End Date</label>
+                <input 
+                  type="datetime-local" 
+                  value={(editingCoupon ? editingCoupon.endDate : newCoupon.endDate) ?? ''}
+                  onChange={(e) => editingCoupon
+                    ? setEditingCoupon({...editingCoupon, endDate: e.target.value})
+                    : setNewCoupon({...newCoupon, endDate: e.target.value})
+                  }
+                />
               </div>
               
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>

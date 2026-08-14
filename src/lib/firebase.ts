@@ -34,9 +34,6 @@ if (typeof window !== "undefined") {
     if (process.env.NODE_ENV === "development") {
       // This must be set BEFORE initializeAppCheck
       ;(window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true
-      console.log(
-        "🔧 App Check: Development mode detected. Using Debug Provider.",
-      )
     }
 
     try {
@@ -44,7 +41,6 @@ if (typeof window !== "undefined") {
         provider: new ReCaptchaV3Provider(siteKey),
         isTokenAutoRefreshEnabled: true,
       })
-      console.log("✅ Firebase App Check initialized successfully")
     } catch (error: any) {
       if (error?.code !== "app-check/already-initialized") {
         console.error("❌ Firebase App Check failed to initialize:", error)

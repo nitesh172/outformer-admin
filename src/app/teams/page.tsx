@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Shield, Plus, Pencil, Trash2, X, Mail } from "lucide-react";
 import { useToast } from "@/lib/ToastContext";
 import { useAuth } from "@/lib/AuthContext";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 
 interface TeamMember {
   id: string;
@@ -284,13 +285,14 @@ export default function TeamsPage() {
 
               <div className="input-group">
                 <label>Access Level Role</label>
-                <select
+                <CustomSelect
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-                >
-                  <option value="team">Team Member</option>
-                  <option value="admin">Administrator</option>
-                </select>
+                  onChange={(role) => setFormData({ ...formData, role })}
+                  options={[
+                    { value: "team", label: "Team Member" },
+                    { value: "admin", label: "Administrator" }
+                  ]}
+                />
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>

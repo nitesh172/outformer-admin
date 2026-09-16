@@ -10,6 +10,7 @@ import { LedgerContent } from "../ledger/page";
 import { PaymentsContent } from "../payments/page";
 import { useToast } from "@/lib/ToastContext";
 import { useAuth } from "@/lib/AuthContext";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 
 interface UserProfile {
     id: string;
@@ -309,18 +310,18 @@ function UsersPageContent() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '200px' }}>
                         <label style={{ margin: 0, fontSize: '13px', color: '#9ca3af', fontWeight: 'bold', whiteSpace: 'nowrap' }}>Status:</label>
-                        <select
+                        <CustomSelect
                             value={statusFilter}
-                            onChange={(e) => {
-                                setStatusFilter(e.target.value as any);
+                            onChange={(val) => {
+                                setStatusFilter(val as any);
                                 setPageStartDocs([null]);
                             }}
-                            style={{ cursor: 'pointer', padding: '10px 14px' }}
-                        >
-                            <option value="all">All Users</option>
-                            <option value="active">Active Only</option>
-                            <option value="inactive">Disabled Only</option>
-                        </select>
+                            options={[
+                                { value: "all", label: "All Users" },
+                                { value: "active", label: "Active Only" },
+                                { value: "inactive", label: "Disabled Only" }
+                            ]}
+                        />
                     </div>
                 </div>
 
@@ -534,25 +535,27 @@ function UsersPageContent() {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                 <div className="input-group">
                                     <label>Subscription Plan</label>
-                                    <select
+                                    <CustomSelect
                                         value={formData.plan}
-                                        onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
-                                    >
-                                        <option value="standard">Standard</option>
-                                        <option value="pro">Pro</option>
-                                    </select>
+                                        onChange={(plan) => setFormData({ ...formData, plan })}
+                                        options={[
+                                            { value: "standard", label: "Standard" },
+                                            { value: "pro", label: "Pro" }
+                                        ]}
+                                    />
                                 </div>
                                 <div className="input-group">
                                     <label>Subscription Status</label>
-                                    <select
+                                    <CustomSelect
                                         value={formData.subscriptionStatus}
-                                        onChange={(e) => setFormData({ ...formData, subscriptionStatus: e.target.value })}
-                                    >
-                                        <option value="active">Active</option>
-                                        <option value="inactive">Inactive</option>
-                                        <option value="trialing">Trialing</option>
-                                        <option value="canceled">Canceled</option>
-                                    </select>
+                                        onChange={(status) => setFormData({ ...formData, subscriptionStatus: status })}
+                                        options={[
+                                            { value: "active", label: "Active" },
+                                            { value: "inactive", label: "Inactive" },
+                                            { value: "trialing", label: "Trialing" },
+                                            { value: "canceled", label: "Canceled" }
+                                        ]}
+                                    />
                                 </div>
                             </div>
 

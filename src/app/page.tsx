@@ -5,6 +5,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
 import { Users, Package, TrendingUp, TrendingDown, DollarSign, Calendar, RefreshCcw, CreditCard } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 
 
 export default function Dashboard() {
@@ -231,114 +232,49 @@ export default function Dashboard() {
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
+                    justifyContent: 'flex-end',
                     background: 'var(--card-bg)',
                     border: '1px solid var(--border)',
                     borderRadius: '0px',
                     padding: '12px 20px',
                     marginBottom: '24px',
-                    gap: '16px',
+                    gap: '24px',
                     flexWrap: 'wrap'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '13px', color: '#9ca3af', fontWeight: 600 }}>Package View Breakdowns:</span>
-                        <div style={{ display: 'flex', gap: '4px', background: 'var(--muted)', padding: '4px', borderRadius: '0px', border: '1px solid var(--border)' }}>
-                            <button
-                                onClick={() => setTimeframe("monthly")}
-                                style={{
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    padding: '6px 14px',
-                                    borderRadius: '0px',
-                                    cursor: 'pointer',
-                                    background: timeframe === "monthly" ? "var(--primary)" : "none",
-                                    border: 'none',
-                                    color: timeframe === "monthly" ? "white" : "#9ca3af",
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                Selected Month
-                            </button>
-                            <button
-                                onClick={() => setTimeframe("yearly")}
-                                style={{
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    padding: '6px 14px',
-                                    borderRadius: '0px',
-                                    cursor: 'pointer',
-                                    background: timeframe === "yearly" ? "var(--primary)" : "none",
-                                    border: 'none',
-                                    color: timeframe === "yearly" ? "white" : "#9ca3af",
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                Selected Year
-                            </button>
-                            <button
-                                onClick={() => setTimeframe("total")}
-                                style={{
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    padding: '6px 14px',
-                                    borderRadius: '0px',
-                                    cursor: 'pointer',
-                                    background: timeframe === "total" ? "var(--primary)" : "none",
-                                    border: 'none',
-                                    color: timeframe === "total" ? "white" : "#9ca3af",
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                All Time
-                            </button>
-                        </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '180px' }}>
+                        <span style={{ fontSize: '13px', color: '#9ca3af', fontWeight: 600, whiteSpace: 'nowrap' }}>Breakdown View:</span>
+                        <CustomSelect
+                            value={timeframe}
+                            onChange={(val) => setTimeframe(val as any)}
+                            options={[
+                                { value: "monthly", label: "Selected Month" },
+                                { value: "yearly", label: "Selected Year" },
+                                { value: "total", label: "All Time" }
+                            ]}
+                        />
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <label style={{ fontSize: '13px', color: '#9ca3af', fontWeight: 600 }}>Filter Month:</label>
-                            <select
-                                value={selectedMonth}
-                                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                                style={{
-                                    background: 'var(--card-bg)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '0px',
-                                    color: 'var(--foreground)',
-                                    padding: '8px 12px',
-                                    fontSize: '13px',
-                                    cursor: 'pointer',
-                                    outline: 'none'
-                                }}
-                            >
-                                {monthNames.map((name, idx) => (
-                                    <option key={idx} value={idx}>{name}</option>
-                                ))}
-                            </select>
+                    {timeframe === "monthly" && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '160px' }}>
+                            <span style={{ fontSize: '13px', color: '#9ca3af', fontWeight: 600, whiteSpace: 'nowrap' }}>Month:</span>
+                            <CustomSelect
+                                value={String(selectedMonth)}
+                                onChange={(val) => setSelectedMonth(Number(val))}
+                                options={monthNames.map((name, idx) => ({ value: String(idx), label: name }))}
+                            />
                         </div>
+                    )}
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <label style={{ fontSize: '13px', color: '#9ca3af', fontWeight: 600 }}>Filter Year:</label>
-                            <select
-                                value={selectedYear}
-                                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                                style={{
-                                    background: 'var(--card-bg)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '0px',
-                                    color: 'var(--foreground)',
-                                    padding: '8px 12px',
-                                    fontSize: '13px',
-                                    cursor: 'pointer',
-                                    outline: 'none'
-                                }}
-                            >
-                                {availableYears.map(yr => (
-                                    <option key={yr} value={yr}>{yr}</option>
-                                ))}
-                            </select>
+                    {(timeframe === "monthly" || timeframe === "yearly") && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '140px' }}>
+                            <span style={{ fontSize: '13px', color: '#9ca3af', fontWeight: 600, whiteSpace: 'nowrap' }}>Year:</span>
+                            <CustomSelect
+                                value={String(selectedYear)}
+                                onChange={(val) => setSelectedYear(Number(val))}
+                                options={availableYears.map(yr => ({ value: String(yr), label: String(yr) }))}
+                            />
                         </div>
-                    </div>
+                    )}
                 </div>
             )}
 

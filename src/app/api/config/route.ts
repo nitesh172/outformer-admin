@@ -24,6 +24,7 @@ export async function GET(request: Request) {
     });
 
     const responseText = await response.text();
+    console.log(responseText)
     if (!response.ok) {
       throw new Error(`Backend status ${response.status}: ${responseText}`);
     }

@@ -32,7 +32,7 @@ interface LedgerEntry {
   id: string;
   userId: string;
   type: 'INFLOW' | 'OUTFLOW';
-  category: 'WHISPER' | 'SNIP_TYPING';
+  category: 'WHISPER' | 'SNIP_TYPING' | 'ASSISTANT' | 'PURCHASE' | 'ADJUSTMENT' | string;
   amount: number;
   balanceAfter: number;
   referenceId: string;

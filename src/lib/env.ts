@@ -2,7 +2,7 @@ const REQUIRED_SERVER_ENV = [
   "FIREBASE_ADMIN_PROJECT_ID",
   "FIREBASE_ADMIN_CLIENT_EMAIL",
   "FIREBASE_ADMIN_PRIVATE_KEY",
-  "WORKER_PROXY_URL",
+  "API_URL",
   "API_SECRET",
 ] as const;
 
@@ -18,7 +18,7 @@ export function validateEnv() {
 
   if (missingServer.length > 0 || missingClient.length > 0) {
     const errorMsg = `Critical environment variables missing! Server: [${missingServer.join(
-      ", "
+      ", ",
     )}], Client: [${missingClient.join(", ")}]`;
     console.error(errorMsg);
     throw new Error(errorMsg);

@@ -223,6 +223,8 @@ tr:hover td {
 }
 
 .badge {
+    display: inline-flex;
+    align-items: center;
     padding: 4px 10px;
     border-radius: 0;
     font-size: 12px;
@@ -242,6 +244,18 @@ tr:hover td {
 .badge-danger {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
+}
+
+.badge-primary {
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--primary);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.badge-outline {
+    background: transparent;
+    color: var(--muted-foreground);
+    border: 1px solid var(--border);
 }
 
 .btn {

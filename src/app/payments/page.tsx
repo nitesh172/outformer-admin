@@ -16,10 +16,12 @@ import {
   Timestamp,
   doc,
   getDoc,
-  addDoc,
+  setDoc,
   updateDoc,
   serverTimestamp
 } from "firebase/firestore";
+import { generateReadableId } from "@/lib/id.utils";
+import { PricingPackage } from "@/lib/types";
 import {
   Search,
   Clock,
@@ -37,21 +39,120 @@ import {
   User as UserIcon,
   Check,
   FileText,
-  CreditCard
+  CreditCard,
+  Copy
 } from "lucide-react";
 
-interface PricingPackage {
-  id: string;
-  name: string;
-  price: number;
-  originalPrice?: number;
-  description?: string;
-  fulfillment?: Array<{
-    type: 'WHISPER' | 'SNIP_TYPING';
-    quantity: number;
-    label: string;
-  }>;
-  status?: 'ACTIVE' | 'INACTIVE';
+export interface PaymentFinancials {
+  grossAmount: number;
+  gatewayCommission: number;
+  gatewayTax: number;
+  gatewayTotalFee: number;
+  netSettlementAmount: number;
+  currency: string;
+  isEstimated?: boolean;
+}
+
+export function resolvePaymentFinancials(payment: PaymentEntry): PaymentFinancials {
+  if (payment.financials && typeof payment.financials === "object") {
+    const gross = Number(payment.financials.grossAmount ?? payment.amount ?? 0);
+    const comm = Number(payment.financials.gatewayCommission ?? 0);
+    const tax = Number(payment.financials.gatewayTax ?? 0);
+    const fee = Number(payment.financials.gatewayTotalFee ?? (comm + tax));
+    const net = Number(payment.financials.netSettlementAmount ?? Math.max(0, gross - fee));
+    return {
+      grossAmount: gross,
+      gatewayCommission: comm,
+      gatewayTax: tax,
+      gatewayTotalFee: fee,
+      netSettlementAmount: net,
+      currency: payment.financials.currency || payment.currency || "INR",
+      isEstimated: payment.financials.isEstimated ?? !payment.chargesFinalized,
+    };
+  }
+
+  const gross = Number(payment.amount) || 0;
+  const gw = String(payment.gateway || "").toUpperCase();
+  const currency = payment.currency || "INR";
+
+  let rate = 0;
+  if (gw === "CASHFREE") rate = 0.016;
+  else if (gw === "RAZORPAY") rate = 0.02;
+
+  if (rate > 0 && gross > 0) {
+    const commission = Number((gross * rate).toFixed(2));
+    const tax = Number((commission * 0.18).toFixed(2));
+    const totalFee = Number((commission + tax).toFixed(2));
+    const net = Number(Math.max(0, gross - totalFee).toFixed(2));
+    return {
+      grossAmount: gross,
+      gatewayCommission: commission,
+      gatewayTax: tax,
+      gatewayTotalFee: totalFee,
+      netSettlementAmount: net,
+      currency,
+      isEstimated: true,
+    };
+  }
+
+  return {
+    grossAmount: gross,
+    gatewayCommission: 0,
+    gatewayTax: 0,
+    gatewayTotalFee: 0,
+    netSettlementAmount: gross,
+    currency,
+    isEstimated: false,
+  };
+}
+
+export function resolveTransactionId(payment: PaymentEntry): string | null {
+  if (payment.transactionId && String(payment.transactionId).trim()) {
+    return String(payment.transactionId).trim();
+  }
+  if (payment.gatewayDetails?.transactionId && String(payment.gatewayDetails.transactionId).trim()) {
+    return String(payment.gatewayDetails.transactionId).trim();
+  }
+  if (payment.gatewayDetails?.cf_payment_id && String(payment.gatewayDetails.cf_payment_id).trim()) {
+    return String(payment.gatewayDetails.cf_payment_id).trim();
+  }
+  if ((payment as any).cf_payment_id && String((payment as any).cf_payment_id).trim()) {
+    return String((payment as any).cf_payment_id).trim();
+  }
+  if (payment.gatewayDetails?.razorpay_payment_id && String(payment.gatewayDetails.razorpay_payment_id).trim()) {
+    return String(payment.gatewayDetails.razorpay_payment_id).trim();
+  }
+  if ((payment as any).razorpay_payment_id && String((payment as any).razorpay_payment_id).trim()) {
+    return String((payment as any).razorpay_payment_id).trim();
+  }
+  if ((payment as any).txnId && String((payment as any).txnId).trim()) {
+    return String((payment as any).txnId).trim();
+  }
+  return null;
+}
+
+export function getPaymentAddons(payment: PaymentEntry): Array<{ id: string; name: string; type?: string; price?: number }> {
+  const list: Array<{ id: string; name: string; type?: string; price?: number }> = [];
+
+  if (Array.isArray(payment.addons)) {
+    list.push(...payment.addons);
+  }
+
+  // If payment has legacy includeMembership flag, ensure it's represented as a membership addon
+  const hasMembershipInList = list.some(
+    a => a.type === "MEMBERSHIP" || a.id?.toLowerCase().includes("membership") || a.name?.toLowerCase().includes("membership")
+  );
+
+  if (payment.includeMembership && !hasMembershipInList) {
+    list.push({
+      id: "addon_pro_monthly",
+      name: "Pro Membership",
+      type: "MEMBERSHIP",
+      price: 0
+    });
+  }
+
+  return list;
 }
 
 interface PaymentEntry {
@@ -60,12 +161,35 @@ interface PaymentEntry {
   userId: string;
   amount: number;
   currency: string;
-  status: 'PENDING' | 'SUCCESS' | 'FAILED' | string;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'USER_DROPPED' | 'EXPIRED' | string;
   gateway: string;
   includeMembership: boolean;
+  transactionId?: string;
+  gatewayDetails?: {
+    cf_payment_id?: string | number;
+    transactionId?: string;
+    razorpay_payment_id?: string;
+    payment_method?: string;
+    completedAt?: Timestamp;
+    [key: string]: any;
+  };
+  financials?: PaymentFinancials;
+  chargesFinalized?: boolean;
+  addons?: Array<{
+    id: string;
+    name: string;
+    type?: string;
+    price?: number;
+  }>;
+  appliedCoupon?: {
+    code: string;
+    id: string;
+    discountAmount: number;
+  } | null;
   packInfo?: {
     name: string;
     packageId: string;
+    planType?: string;
   };
   notes?: string;
   createdAt?: Timestamp;
@@ -95,6 +219,17 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPayment, setSelectedPayment] = useState<PaymentEntry | null>(null);
   const [showDetailDrawer, setShowDetailDrawer] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const handleCopy = (text: string, fieldName: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    showToast(`Copied ${fieldName} to clipboard`, "info");
+    setTimeout(() => {
+      setCopiedField(null);
+    }, 2000);
+  };
 
   // Manual payment drawer states
   const [showAddPaymentDrawer, setShowAddPaymentDrawer] = useState(false);
@@ -106,6 +241,7 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
     userId: initialUserId || "",
     amount: "",
     orderId: "",
+    transactionId: "",
     gateway: "MANUAL",
     status: "SUCCESS",
     packageId: "NONE",
@@ -153,7 +289,8 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
     setManualForm({
       userId: targetUid,
       amount: "",
-      orderId: `MANUAL_${Date.now()}`,
+      orderId: generateReadableId("ORDER"),
+      transactionId: generateReadableId("TXN"),
       gateway: "MANUAL",
       status: "SUCCESS",
       packageId: "NONE",
@@ -222,19 +359,43 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
       return;
     }
 
-    const finalOrderId = manualForm.orderId.trim() || `MANUAL_${Date.now()}`;
+    const finalOrderId = manualForm.orderId.trim() || generateReadableId("ORDER");
+    const finalTxnId = manualForm.transactionId.trim() || generateReadableId("TXN");
 
     setSubmittingManualPayment(true);
     try {
+      const selectedAddons: any[] = [];
+      if (manualForm.includeMembership) {
+        selectedAddons.push({
+          id: "addon_pro_monthly",
+          name: "Pro Membership",
+          type: "MEMBERSHIP",
+          price: 0
+        });
+      }
+
       // 1. Record payment in Firestore payments collection
       const paymentData: any = {
+        id: finalOrderId,
         orderId: finalOrderId,
+        transactionId: finalTxnId,
         userId: targetUserId,
         amount: numAmount,
         currency: "INR",
         status: manualForm.status,
         gateway: manualForm.gateway.toUpperCase(),
         includeMembership: Boolean(manualForm.includeMembership),
+        addons: selectedAddons,
+        financials: {
+          grossAmount: numAmount,
+          gatewayCommission: 0,
+          gatewayTax: 0,
+          gatewayTotalFee: 0,
+          netSettlementAmount: numAmount,
+          currency: "INR",
+          isEstimated: false
+        },
+        chargesFinalized: true,
         createdAt: serverTimestamp()
       };
 
@@ -254,7 +415,7 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
         };
       }
 
-      await addDoc(collection(db, "payments"), paymentData);
+      await setDoc(doc(db, "payments", finalOrderId), paymentData);
 
       // 2. Fulfill user balances & ledger if requested and status is SUCCESS
       if (manualForm.applyFulfillment && manualForm.status === "SUCCESS") {
@@ -278,7 +439,9 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
                   newWhisper += addSec;
                   balancesChanged = true;
 
-                  await addDoc(collection(db, "ledger"), {
+                  const txnId = generateReadableId("TXN");
+                  await setDoc(doc(db, "ledger", txnId), {
+                    id: txnId,
                     userId: targetUserId,
                     type: "INFLOW",
                     category: "WHISPER",
@@ -292,7 +455,9 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
                   newSnip += addCredits;
                   balancesChanged = true;
 
-                  await addDoc(collection(db, "ledger"), {
+                  const txnId = generateReadableId("TXN");
+                  await setDoc(doc(db, "ledger", txnId), {
+                    id: txnId,
                     userId: targetUserId,
                     type: "INFLOW",
                     category: "SNIP_TYPING",
@@ -314,6 +479,7 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
             }
 
             if (manualForm.includeMembership) {
+              updates["membership.tier"] = "PRO";
               updates.subscription = {
                 plan: "pro",
                 status: "active"
@@ -485,9 +651,11 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
         const user = usersMap[p.userId];
         const emailMatch = user?.email?.toLowerCase().includes(term);
         const nameMatch = user?.displayName?.toLowerCase().includes(term);
+        const txnId = resolveTransactionId(p) || "";
         const orderIdMatch = p.orderId?.toLowerCase().includes(term) || p.id.toLowerCase().includes(term);
+        const txnMatch = txnId.toLowerCase().includes(term);
         const statusMatch = p.status?.toLowerCase().includes(term);
-        if (!emailMatch && !nameMatch && !orderIdMatch && !statusMatch) {
+        if (!emailMatch && !nameMatch && !orderIdMatch && !txnMatch && !statusMatch) {
           return false;
         }
       }
@@ -499,16 +667,23 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
   // Compute Metrics from currently FILTERED payments list
   const metrics = useMemo(() => {
     let totalRevenue = 0;
+    let totalNetRevenue = 0;
+    let totalGatewayFees = 0;
     let successCount = 0;
     let pendingCount = 0;
     let failedCount = 0;
 
     filteredPayments.forEach(p => {
       const status = p.status?.toUpperCase();
-      const amt = Number(p.amount) || 0;
+      const fin = resolvePaymentFinancials(p);
+      const amt = fin.grossAmount;
+      const net = fin.netSettlementAmount;
+      const fee = fin.gatewayTotalFee;
 
       if (status === "SUCCESS") {
         totalRevenue += amt;
+        totalNetRevenue += net;
+        totalGatewayFees += fee;
         successCount++;
       } else if (status === "PENDING") {
         pendingCount++;
@@ -519,6 +694,8 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
 
     return {
       totalRevenue,
+      totalNetRevenue,
+      totalGatewayFees,
       successCount,
       pendingCount,
       failedCount,
@@ -588,6 +765,9 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
           <div>
             <p style={{ fontSize: '13px', color: '#9ca3af', margin: 0, fontWeight: '500' }}>Total Revenue</p>
             <h3 style={{ fontSize: '24px', fontWeight: '800', margin: '4px 0 0' }}>₹{metrics.totalRevenue.toLocaleString('en-IN')}</h3>
+            <div style={{ fontSize: '11px', color: '#10b981', fontWeight: '600', marginTop: '2px' }}>
+              Net: ₹{metrics.totalNetRevenue.toLocaleString('en-IN')} <span style={{ color: '#9ca3af', fontWeight: 'normal' }}>(-₹{metrics.totalGatewayFees.toLocaleString('en-IN')} fees)</span>
+            </div>
           </div>
         </div>
 
@@ -622,7 +802,7 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
           <Search size={20} style={{ position: 'absolute', left: '16px', color: '#9ca3af' }} />
           <input
             type="text"
-            placeholder="Search payments by email, order ID, or status..."
+            placeholder="Search payments by email, Txn ID, order ID, or status..."
             style={{ paddingLeft: '48px', width: '100%', padding: '12px 16px 12px 48px', background: 'var(--background)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--foreground)' }}
             value={searchTerm}
             onChange={(e) => {
@@ -647,7 +827,10 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
                 { value: "ALL", label: "All Statuses" },
                 { value: "SUCCESS", label: "SUCCESS" },
                 { value: "PENDING", label: "PENDING" },
-                { value: "FAILED", label: "FAILED" }
+                { value: "FAILED", label: "FAILED" },
+                { value: "CANCELLED", label: "CANCELLED" },
+                { value: "USER_DROPPED", label: "USER_DROPPED" },
+                { value: "EXPIRED", label: "EXPIRED" }
               ]}
             />
           </div>
@@ -748,7 +931,7 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
             <tr>
               {!selectedUserId && <th>User</th>}
               <th>Package Name</th>
-              <th>Order ID</th>
+              <th>Txn ID</th>
               <th>Gateway</th>
               <th>Amount</th>
               <th>Status</th>
@@ -794,19 +977,34 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
                       </td>
                     )}
                     <td>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <span style={{ fontWeight: '600', color: 'var(--foreground)' }}>
                           {entry.packInfo?.name || "Pro Membership Only"}
                         </span>
-                        {entry.includeMembership && entry.packInfo?.name !== "Pro Membership Only" && (
-                          <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>
-                            + Pro Membership
+                        {getPaymentAddons(entry).map((addon, aIdx) => (
+                          <span
+                            key={aIdx}
+                            style={{
+                              fontSize: '11px',
+                              color: addon.type === 'MEMBERSHIP' ? '#10b981' : '#9ca3af',
+                              fontWeight: addon.type === 'MEMBERSHIP' ? 'bold' : 'normal'
+                            }}
+                          >
+                            + {addon.name}
                           </span>
-                        )}
+                        ))}
                       </div>
                     </td>
                     <td>
-                      <code style={{ fontSize: '12px', color: '#9ca3af' }}>{entry.orderId || entry.id}</code>
+                      {resolveTransactionId(entry) ? (
+                        <code style={{ fontSize: '12px', color: 'var(--foreground)', fontWeight: '600' }}>
+                          {resolveTransactionId(entry)}
+                        </code>
+                      ) : (
+                        <span style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>
+                          {entry.status === 'PENDING' ? 'Pending' : 'N/A'}
+                        </span>
+                      )}
                     </td>
                     <td>
                       <span style={{ fontSize: '12px', fontWeight: '500', color: '#9ca3af' }}>{entry.gateway}</span>
@@ -903,63 +1101,214 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', maxHeight: 'calc(100dvh - 120px)', paddingRight: '4px' }}>
+            {(() => {
+              const selectedFinancials = resolvePaymentFinancials(selectedPayment);
+              const selectedTxnId = resolveTransactionId(selectedPayment);
 
-              {/* Payment Summary Header */}
-              <div style={{
-                padding: '20px',
-                background: 'var(--bg-secondary)',
-                borderRadius: '12px',
-                border: '1px solid var(--border)',
-                textAlign: 'center'
-              }}>
-                <div style={{ fontSize: '14px', color: '#9ca3af', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>Amount Paid</div>
-                <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--foreground)' }}>
-                  ₹{selectedPayment.amount}
-                </div>
-                <span className={`badge ${
-                  selectedPayment.status === 'SUCCESS'
-                    ? 'badge-success'
-                    : selectedPayment.status === 'PENDING'
-                    ? 'badge-warning'
-                    : 'badge-danger'
-                }`} style={{ marginTop: '12px', display: 'inline-block' }}>
-                  {selectedPayment.status}
-                </span>
-              </div>
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', maxHeight: 'calc(100dvh - 120px)', paddingRight: '4px' }}>
 
-              {/* Transaction Key Metrics */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <h4 style={{ margin: 0, fontSize: '15px', color: '#9ca3af' }}>Transaction Info</h4>
+                  {/* Payment Summary Header */}
+                  <div style={{
+                    padding: '20px',
+                    background: 'var(--bg-secondary)',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px'
+                  }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', textAlign: 'center' }}>
+                      <div style={{ borderRight: '1px solid var(--border)', paddingRight: '8px' }}>
+                        <div style={{ fontSize: '12px', color: '#9ca3af', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>
+                          Gross Paid
+                        </div>
+                        <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--foreground)' }}>
+                          ₹{selectedPayment.amount}
+                        </div>
+                      </div>
+                      <div style={{ paddingLeft: '8px' }}>
+                        <div style={{ fontSize: '12px', color: '#9ca3af', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>
+                          Net Payout (Receivable)
+                        </div>
+                        <div style={{ fontSize: '26px', fontWeight: '800', color: '#10b981' }}>
+                          ₹{selectedFinancials.netSettlementAmount.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+                      <span className={`badge ${
+                        selectedPayment.status === 'SUCCESS'
+                          ? 'badge-success'
+                          : selectedPayment.status === 'PENDING'
+                          ? 'badge-warning'
+                          : 'badge-danger'
+                      }`}>
+                        {selectedPayment.status}
+                      </span>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span style={{ color: '#9ca3af' }}>Order ID:</span>
-                    <span style={{ fontWeight: '600' }}>{selectedPayment.orderId || "N/A"}</span>
+                      {selectedPayment.gateway?.toUpperCase() === 'MANUAL' ? (
+                        <span className="badge badge-success" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={12} /> Direct Received
+                        </span>
+                      ) : selectedPayment.chargesFinalized ? (
+                        <span className="badge badge-info" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={12} /> Charges Finalized (T+2 Payout)
+                        </span>
+                      ) : selectedPayment.status === 'SUCCESS' ? (
+                        <span className="badge badge-warning" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <AlertTriangle size={12} /> Estimated Fees (T+2 Payout)
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span style={{ color: '#9ca3af' }}>Payment ID:</span>
-                    <span style={{ fontWeight: '600' }}>{selectedPayment.id}</span>
+                  {/* Financial Breakdown Section */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h4 style={{ margin: 0, fontSize: '15px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <DollarSign size={16} color="var(--primary)" /> Financial Breakdown
+                      </h4>
+                      <span style={{ fontSize: '11px', color: selectedPayment.chargesFinalized ? '#10b981' : '#f59e0b', fontWeight: '600' }}>
+                        {selectedPayment.gateway?.toUpperCase() === 'MANUAL'
+                          ? "Direct Settlement"
+                          : selectedPayment.chargesFinalized
+                          ? "Charges Finalized (T+2 Bank Payout)"
+                          : "Estimated Charges (T+2 Bank Payout)"}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>Gross Amount:</span>
+                        <span style={{ fontWeight: '600' }}>₹{selectedFinancials.grossAmount.toFixed(2)}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>
+                          Gateway Commission
+                          {selectedPayment.gateway?.toUpperCase() === 'CASHFREE' && ' (1.6%)'}
+                          {selectedPayment.gateway?.toUpperCase() === 'RAZORPAY' && ' (2.0%)'}:
+                        </span>
+                        <span style={{ fontWeight: '600', color: selectedFinancials.gatewayCommission > 0 ? '#ef4444' : 'var(--foreground)' }}>
+                          {selectedFinancials.gatewayCommission > 0 ? `-₹${selectedFinancials.gatewayCommission.toFixed(2)}` : '₹0.00'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>GST on Fee (18%):</span>
+                        <span style={{ fontWeight: '600', color: selectedFinancials.gatewayTax > 0 ? '#ef4444' : 'var(--foreground)' }}>
+                          {selectedFinancials.gatewayTax > 0 ? `-₹${selectedFinancials.gatewayTax.toFixed(2)}` : '₹0.00'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>Total Deductions / Fee:</span>
+                        <span style={{ fontWeight: '600', color: selectedFinancials.gatewayTotalFee > 0 ? '#ef4444' : 'var(--foreground)' }}>
+                          {selectedFinancials.gatewayTotalFee > 0 ? `-₹${selectedFinancials.gatewayTotalFee.toFixed(2)}` : '₹0.00'}
+                        </span>
+                      </div>
+
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px', marginTop: '2px', display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                        <span style={{ fontWeight: '700', color: 'var(--foreground)' }}>Expected Net Payout:</span>
+                        <span style={{ fontWeight: '800', color: '#10b981', fontSize: '16px' }}>
+                          ₹{selectedFinancials.netSettlementAmount.toFixed(2)}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic', marginTop: '2px' }}>
+                        * Standard gateway payout cycle is T+1 to T+2 business days before funds deposit into your bank account.
+                      </div>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span style={{ color: '#9ca3af' }}>Gateway:</span>
-                    <span style={{ fontWeight: '600', textTransform: 'uppercase' }}>{selectedPayment.gateway}</span>
-                  </div>
+                  {/* Transaction Key Metrics */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <CreditCard size={16} color="var(--primary)" /> Transaction Info
+                    </h4>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span style={{ color: '#9ca3af' }}>Currency:</span>
-                    <span style={{ fontWeight: '600', textTransform: 'uppercase' }}>{selectedPayment.currency}</span>
-                  </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px' }}>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span style={{ color: '#9ca3af' }}>Date & Time:</span>
-                    <span style={{ fontWeight: '600' }}>{formatDate(selectedPayment.createdAt)}</span>
+                      {/* Order ID */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>Order ID:</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <code style={{ fontWeight: '600', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>
+                            {selectedPayment.orderId || selectedPayment.id || "N/A"}
+                          </code>
+                          {(selectedPayment.orderId || selectedPayment.id) && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(selectedPayment.orderId || selectedPayment.id, 'Order ID')}
+                              title="Copy Order ID"
+                              style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                            >
+                              {copiedField === 'Order ID' ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Transaction ID (Txn ID) */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>Transaction ID (Txn ID):</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {selectedTxnId ? (
+                            <>
+                              <code style={{ fontWeight: '700', color: 'var(--primary)', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>
+                                {selectedTxnId}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(selectedTxnId, 'Transaction ID')}
+                                title="Copy Txn ID"
+                                style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                              >
+                                {copiedField === 'Transaction ID' ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+                              </button>
+                            </>
+                          ) : (
+                            <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: '13px' }}>
+                              {selectedPayment.status === 'PENDING' ? 'Pending Gateway Capture' : 'N/A'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Payment Record ID (if different from orderId and txnId) */}
+                      {selectedPayment.id && selectedPayment.id !== selectedPayment.orderId && selectedPayment.id !== selectedTxnId && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
+                          <span style={{ color: '#9ca3af' }}>Payment Record ID:</span>
+                          <code style={{ fontSize: '12px', color: '#9ca3af' }}>{selectedPayment.id}</code>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>Gateway:</span>
+                        <span style={{ fontWeight: '600', textTransform: 'uppercase' }}>{selectedPayment.gateway}</span>
+                      </div>
+
+                      {selectedPayment.gatewayDetails?.payment_method && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                          <span style={{ color: '#9ca3af' }}>Payment Method:</span>
+                          <span style={{ fontWeight: '600', textTransform: 'uppercase' }}>
+                            {String(selectedPayment.gatewayDetails.payment_method)}
+                          </span>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>Currency:</span>
+                        <span style={{ fontWeight: '600', textTransform: 'uppercase' }}>{selectedPayment.currency}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#9ca3af' }}>Date & Time:</span>
+                        <span style={{ fontWeight: '600' }}>{formatDate(selectedPayment.createdAt)}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
 
               {/* Package & Membership Info */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -976,12 +1325,72 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
                     <span style={{ fontWeight: '600', fontSize: '12px', color: '#9ca3af' }}>{selectedPayment.packInfo?.packageId || "N/A"}</span>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span style={{ color: '#9ca3af' }}>Pro Membership Included:</span>
-                    <span style={{ fontWeight: '600', color: selectedPayment.includeMembership ? '#10b981' : '#9ca3af' }}>
-                      {selectedPayment.includeMembership ? "YES" : "NO"}
-                    </span>
-                  </div>
+                  {selectedPayment.packInfo?.planType && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                      <span style={{ color: '#9ca3af' }}>Plan Type:</span>
+                      <span className="badge badge-primary" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+                        {selectedPayment.packInfo.planType}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Addons List */}
+                  {(() => {
+                    const paymentAddons = getPaymentAddons(selectedPayment);
+                    if (paymentAddons.length === 0) return null;
+                    return (
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <span style={{ color: '#9ca3af', fontSize: '12px', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '0.04em' }}>
+                          Add-ons Included:
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {paymentAddons.map((addon, aIdx) => (
+                            <div key={aIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px', padding: '2px 0' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{
+                                  width: '6px',
+                                  height: '6px',
+                                  borderRadius: '50%',
+                                  background: addon.type === 'MEMBERSHIP' ? 'var(--primary)' : '#10b981',
+                                  flexShrink: 0
+                                }} />
+                                <span style={{ fontWeight: '500', color: 'var(--foreground)' }}>
+                                  {addon.name || addon.id}
+                                </span>
+                                {addon.type === 'MEMBERSHIP' && (
+                                  <span style={{
+                                    fontSize: '11px',
+                                    color: 'var(--primary)',
+                                    background: 'rgba(99, 102, 241, 0.12)',
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    fontWeight: '600'
+                                  }}>
+                                    Membership
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ color: Number(addon.price) > 0 ? '#10b981' : '#9ca3af', fontWeight: '600', fontSize: '13px' }}>
+                                {Number(addon.price) > 0 ? `₹${addon.price}` : 'Included'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Applied Coupon Info */}
+                  {selectedPayment.appliedCoupon && (
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                        <span style={{ color: '#9ca3af' }}>Applied Coupon:</span>
+                        <span style={{ fontWeight: 'bold', color: 'var(--primary)' }}>
+                          {selectedPayment.appliedCoupon.code} (-₹{selectedPayment.appliedCoupon.discountAmount})
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1053,6 +1462,8 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
               )}
 
             </div>
+          );
+        })()}
           </div>
         </div>
       )}
@@ -1308,6 +1719,7 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
                       { value: "CASH", label: "Cash" },
                       { value: "CHEQUE", label: "Cheque / DD" },
                       { value: "RAZORPAY", label: "Razorpay (Manual Log)" },
+                      { value: "CASHFREE", label: "Cashfree (Manual Log)" },
                       { value: "OTHER", label: "Other" }
                     ]}
                   />
@@ -1315,16 +1727,29 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
 
                 <div className="input-group" style={{ marginBottom: 0 }}>
                   <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--foreground)' }}>
-                    Order / Reference ID <span style={{ color: '#ef4444' }}>*</span>
+                    Order ID <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. MANUAL_12345 or UTR..."
+                    placeholder="e.g. ORDER_12345"
                     value={manualForm.orderId}
                     onChange={(e) => setManualForm({ ...manualForm, orderId: e.target.value })}
                   />
                 </div>
+              </div>
+
+              {/* Transaction ID / Bank UTR */}
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--foreground)' }}>
+                  Transaction ID / Bank UTR <span style={{ color: '#9ca3af', fontWeight: 'normal' }}>(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. TXN_..., Bank UTR, or Gateway Payment ID"
+                  value={manualForm.transactionId}
+                  onChange={(e) => setManualForm({ ...manualForm, transactionId: e.target.value })}
+                />
               </div>
 
               {/* Membership Toggle */}
@@ -1345,10 +1770,10 @@ export function PaymentsContent({ userIdProp, onBackProp }: { userIdProp?: strin
                 />
                 <label htmlFor="includeMembership" style={{ margin: 0, cursor: 'pointer' }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--foreground)' }}>
-                    Include Pro Membership
+                    Add Pro Membership Add-on
                   </div>
                   <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                    Marks transaction as including membership and activates Pro subscription on user account.
+                    Attaches Pro Membership as an add-on to this payment and activates Pro membership tier on user account.
                   </div>
                 </label>
               </div>

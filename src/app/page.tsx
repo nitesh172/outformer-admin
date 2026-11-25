@@ -6,6 +6,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { Users, Package, TrendingUp, TrendingDown, DollarSign, Calendar, RefreshCcw, CreditCard } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { CustomSelect } from "@/components/ui/CustomSelect";
+import { resolvePaymentFinancials } from "@/lib/financials.utils";
 
 
 export default function Dashboard() {
@@ -78,8 +79,14 @@ export default function Dashboard() {
     // Recalculate stats dynamically based on payments list and selectors
     const {
         totalRevenue,
+        totalNetRevenue,
+        totalFees,
         monthlyRevenue,
+        monthlyNetRevenue,
+        monthlyFees,
         yearlyRevenue,
+        yearlyNetRevenue,
+        yearlyFees,
         monthlyGrowth,
         packageBreakdown,
         monthlyTrend,
@@ -87,8 +94,17 @@ export default function Dashboard() {
         availableYears
     } = useMemo(() => {
         let total = 0;
+        let totalNet = 0;
+        let totalFeesAllTime = 0;
+
         let monthly = 0;
+        let monthlyNet = 0;
+        let monthlyFeesTotal = 0;
+
         let yearly = 0;
+        let yearlyNet = 0;
+        let yearlyFeesTotal = 0;
+
         let prevMonthRevenue = 0;
         const packBreakdown: Record<string, number> = {};
         const monthlyMap: Record<string, number> = {};
@@ -107,8 +123,14 @@ export default function Dashboard() {
         }
 
         paymentsList.forEach((p: any) => {
-            const amt = Number(p.amount) || 0;
+            const fin = resolvePaymentFinancials(p);
+            const amt = fin.grossAmount;
+            const netAmt = fin.netSettlementAmount;
+            const feeAmt = fin.gatewayTotalFee;
+
             total += amt;
+            totalNet += netAmt;
+            totalFeesAllTime += feeAmt;
 
             const date = p.parsedDate;
             if (date) {
@@ -119,11 +141,15 @@ export default function Dashboard() {
                 // Selected Year Check
                 if (pYear === targetYear) {
                     yearly += amt;
+                    yearlyNet += netAmt;
+                    yearlyFeesTotal += feeAmt;
                 }
 
                 // Selected Month Check
                 if (pYear === targetYear && pMonth === targetMonth) {
                     monthly += amt;
+                    monthlyNet += netAmt;
+                    monthlyFeesTotal += feeAmt;
                 }
 
                 // Previous Month Check (relative to selected month/year)
@@ -181,8 +207,14 @@ export default function Dashboard() {
 
         return {
             totalRevenue: total,
+            totalNetRevenue: totalNet,
+            totalFees: totalFeesAllTime,
             monthlyRevenue: monthly,
+            monthlyNetRevenue: monthlyNet,
+            monthlyFees: monthlyFeesTotal,
             yearlyRevenue: yearly,
+            yearlyNetRevenue: yearlyNet,
+            yearlyFees: yearlyFeesTotal,
             monthlyGrowth: growth,
             packageBreakdown: packBreakdown,
             monthlyTrend: trend,
@@ -289,7 +321,10 @@ export default function Dashboard() {
                                     Revenue in {shortMonthNames[selectedMonth]} {selectedYear}
                                 </div>
                                 <div className="stat-value" style={{ fontSize: '28px', color: '#10b981', marginTop: '4px' }}>
-                                    ₹{loading ? "..." : monthlyRevenue.toLocaleString()}
+                                    ₹{loading ? "..." : monthlyRevenue.toLocaleString('en-IN')}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
+                                    Net: <strong style={{ color: '#10b981' }}>₹{loading ? "..." : monthlyNetRevenue.toLocaleString('en-IN')}</strong> (-₹{loading ? "..." : monthlyFees.toLocaleString('en-IN')} fees)
                                 </div>
                             </div>
                             <div style={{ padding: '12px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '0px', color: '#10b981' }}>
@@ -318,7 +353,10 @@ export default function Dashboard() {
                             <div>
                                 <div className="stat-label">Revenue in {selectedYear}</div>
                                 <div className="stat-value" style={{ fontSize: '28px', color: '#8b5cf6', marginTop: '4px' }}>
-                                    ₹{loading ? "..." : yearlyRevenue.toLocaleString()}
+                                    ₹{loading ? "..." : yearlyRevenue.toLocaleString('en-IN')}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
+                                    Net: <strong style={{ color: '#8b5cf6' }}>₹{loading ? "..." : yearlyNetRevenue.toLocaleString('en-IN')}</strong> (-₹{loading ? "..." : yearlyFees.toLocaleString('en-IN')} fees)
                                 </div>
                             </div>
                             <div style={{ padding: '12px', background: 'rgba(139, 92, 246, 0.1)', borderRadius: '0px', color: '#8b5cf6' }}>
@@ -337,7 +375,10 @@ export default function Dashboard() {
                             <div>
                                 <div className="stat-label">Total Revenue (All Time)</div>
                                 <div className="stat-value" style={{ fontSize: '28px', color: 'var(--foreground)', marginTop: '4px' }}>
-                                    ₹{loading ? "..." : totalRevenue.toLocaleString()}
+                                    ₹{loading ? "..." : totalRevenue.toLocaleString('en-IN')}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
+                                    Net: <strong style={{ color: '#10b981' }}>₹{loading ? "..." : totalNetRevenue.toLocaleString('en-IN')}</strong> (-₹{loading ? "..." : totalFees.toLocaleString('en-IN')} fees)
                                 </div>
                             </div>
                             <div style={{ padding: '12px', background: 'var(--muted)', borderRadius: '0px', color: 'var(--foreground)' }}>
@@ -346,7 +387,7 @@ export default function Dashboard() {
                         </div>
                         <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#9ca3af' }}>
                             <TrendingUp size={14} style={{ color: '#10b981' }} />
-                            <span>Cumulative gross revenue</span>
+                            <span>Cumulative gross vs net payout</span>
                         </div>
                     </div>
 
@@ -721,6 +762,9 @@ export default function Dashboard() {
                                     </div>
                                     <div style={{ textAlign: 'right' }}>
                                         <div style={{ fontWeight: 700, color: '#10b981', fontSize: '14px' }}>+₹{sale.amount}</div>
+                                        <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                                            Net: ₹{resolvePaymentFinancials(sale).netSettlementAmount.toFixed(2)}
+                                        </div>
                                         <div style={{ fontSize: '10px', color: '#6b7280' }}>
                                             {sale.createdAt?.toDate ? sale.createdAt.toDate().toLocaleDateString('en-IN') : ""}
                                         </div>
